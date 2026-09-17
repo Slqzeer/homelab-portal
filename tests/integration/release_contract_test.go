@@ -18,12 +18,14 @@ type workflow struct {
 	Jobs        map[string]workflowJob `yaml:"jobs"`
 }
 type workflowJob struct {
-	Needs       []string          `yaml:"needs"`
-	Uses        string            `yaml:"uses"`
-	Environment string            `yaml:"environment"`
-	Permissions map[string]string `yaml:"permissions"`
-	Outputs     map[string]string `yaml:"outputs"`
-	Steps       []workflowStep    `yaml:"steps"`
+	If              string            `yaml:"if"`
+	ContinueOnError bool              `yaml:"continue-on-error"`
+	Needs           []string          `yaml:"needs"`
+	Uses            string            `yaml:"uses"`
+	Environment     string            `yaml:"environment"`
+	Permissions     map[string]string `yaml:"permissions"`
+	Outputs         map[string]string `yaml:"outputs"`
+	Steps           []workflowStep    `yaml:"steps"`
 }
 type workflowStep struct {
 	ID              string            `yaml:"id"`
@@ -36,8 +38,82 @@ type workflowStep struct {
 }
 
 func releaseRoot() string {
+	// Only mutation-test child processes set this, to inspect an isolated fixture.
+	if root := os.Getenv("PORTAL_RELEASE_CONTRACT_ROOT"); root != "" {
+		return root
+	}
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..")
+}
+
+// Reuse the actual contracts in a child test process; mutation tests must prove
+// those assertions fail, rather than implementing a second, weaker validator.
+func rejectReleaseMutation(t *testing.T, relativePath, targetTest string, mutate func(string) string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(releaseRoot(), relativePath))
+	require.NoError(t, err)
+	original := strings.ReplaceAll(string(data), "\r\n", "\n")
+	mutated := mutate(original)
+	require.NotEqual(t, original, mutated, "mutation must change the fixture")
+	root := t.TempDir()
+	fixture := filepath.Join(root, relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fixture), 0755))
+	require.NoError(t, os.WriteFile(fixture, []byte(mutated), 0644))
+	cmd := exec.Command(os.Args[0], "-test.run=^"+targetTest+"$")
+	cmd.Env = append(os.Environ(), "PORTAL_RELEASE_CONTRACT_ROOT="+root)
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err, "contract accepted mutation:\n%s", out)
+	require.Contains(t, string(out), "--- FAIL: "+targetTest, "must fail the contract, not test startup")
+}
+
+func TestReleaseRejectsJobGateMutations(t *testing.T) {
+	for _, job := range []struct{ workflow, name, contract string }{
+		{"test", "verify", "TestReleasePullRequestChecks"},
+		{"release", "test", "TestReleaseImmutableSupplyChain"},
+		{"release", "release", "TestReleaseImmutableSupplyChain"},
+		{"release", "promotion", "TestReleaseImmutableSupplyChain"},
+	} {
+		for _, control := range []string{"if: always()", "if: false", "continue-on-error: true", "continue-on-error: '${{ true }}'"} {
+			t.Run(job.name+"/"+control, func(t *testing.T) {
+				rejectReleaseMutation(t, ".github/workflows/"+job.workflow+".yaml", job.contract, func(s string) string {
+					return strings.Replace(s, "  "+job.name+":\n", "  "+job.name+":\n    "+control+"\n", 1)
+				})
+			})
+		}
+	}
+}
+
+func TestReleaseRejectsSealMutations(t *testing.T) {
+	cdx := `    cosign verify-attestation "$ref" --type cyclonedx "${verification[@]}" > reports/attestation-cyclonedx.json` + "\n"
+	spdx := `    cosign verify-attestation "$ref" --type spdxjson "${verification[@]}" > reports/attestation-spdx.json` + "\n"
+	mutations := map[string]func(string) string{
+		"scan tag instead of digest": func(s string) string {
+			return strings.Replace(s, `--output "reports/trivy-$arch.json" "$ref"`, `--output "reports/trivy-$arch.json" "$IMAGE:latest"`, 1)
+		},
+		"omit CycloneDX verification": func(s string) string { return strings.Replace(s, cdx, "", 1) },
+		"omit SPDX verification":      func(s string) string { return strings.Replace(s, spdx, "", 1) },
+		"verify wrong digest": func(s string) string {
+			return strings.Replace(s, cdx, strings.Replace(cdx, `"$ref"`, `"$IMAGE:latest"`, 1), 1)
+		},
+		"omit attestation issuer": func(s string) string {
+			return strings.Replace(s, cdx, strings.Replace(cdx, `"${verification[@]}"`, `--certificate-identity "$identity" --certificate-github-workflow-sha "$GITHUB_SHA"`, 1), 1)
+		},
+		"omit attestation identity": func(s string) string {
+			return strings.Replace(s, spdx, strings.Replace(spdx, `"${verification[@]}"`, `--certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-github-workflow-sha "$GITHUB_SHA"`, 1), 1)
+		},
+		"omit source SHA": func(s string) string {
+			return strings.Replace(s, ` --certificate-github-workflow-sha "$GITHUB_SHA"`, "", 1)
+		},
+		"verify attestations before signature": func(s string) string {
+			s = strings.Replace(s, cdx+spdx, "", 1)
+			return strings.Replace(s, `    cosign verify "$ref"`, cdx+spdx+`    cosign verify "$ref"`, 1)
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			rejectReleaseMutation(t, "scripts/release.sh", "TestReleaseSealScansBothPlatformsBeforeSigningDigest", mutate)
+		})
+	}
 }
 func readWorkflow(t *testing.T, name string) workflow {
 	t.Helper()
@@ -47,6 +123,8 @@ func readWorkflow(t *testing.T, name string) workflow {
 	require.NoError(t, yaml.Unmarshal(data, &w))
 	require.Empty(t, w.Permissions, "grant permissions only per job")
 	for _, job := range w.Jobs {
+		require.Empty(t, job.If, "jobs must preserve GitHub's default success dependency gate")
+		require.False(t, job.ContinueOnError, "a failed verification or release job must block dependents")
 		for _, step := range job.Steps {
 			require.False(t, step.ContinueOnError)
 			if !strings.HasPrefix(step.Uses, "actions/upload-artifact@") {
@@ -146,6 +224,26 @@ func TestReleaseImmutableSupplyChain(t *testing.T) {
 	require.Equal(t, "reports/", artifact.With["path"])
 }
 
+func TestReleaseBuildToolsArePinned(t *testing.T) {
+	for _, name := range []string{"test", "release"} {
+		t.Run(name, func(t *testing.T) {
+			w := readWorkflow(t, name)
+			jobName := "verify"
+			if name == "release" {
+				jobName = "release"
+			}
+			_, builder := stepUsing(t, w.Jobs[jobName], "docker/setup-buildx-action")
+			require.Equal(t, "v0.37.1", builder.With["version"])
+			require.Equal(t, "docker-container", builder.With["driver"])
+			require.Equal(t, "image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3", builder.With["driver-opts"])
+			if name == "release" {
+				_, qemu := stepUsing(t, w.Jobs[jobName], "docker/setup-qemu-action")
+				require.Equal(t, "tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0", qemu.With["image"])
+			}
+		})
+	}
+}
+
 // External tool doubles exercise the executable scripts without a registry,
 // OIDC token, Docker daemon or mutating a developer's checkout.
 func runReleaseScript(t *testing.T, script, mode, failure string, extra ...string) (string, string, error) {
@@ -170,6 +268,7 @@ printf '%s' "$name" >> "$TRACE"
 printf '|%s' "$@" >> "$TRACE"
 printf '\n' >> "$TRACE"
 if [[ "$name" == "$FAIL_TOOL" ]]; then exit 23; fi
+if [[ -n "${FAIL_COMMAND:-}" && "$name $*" == "$FAIL_COMMAND"* ]]; then exit 23; fi
 if [[ "$name" == syft ]]; then
   for arg in "$@"; do
     if [[ "$arg" == *-json=* ]]; then printf '{}\n' > "${arg#*=}"; fi
@@ -194,6 +293,10 @@ if [[ "$name" == gh ]]; then printf '%s\n' "$ENVIRONMENT_JSON"; fi
 		"GITHUB_RUN_ID=123", "GITHUB_RUN_ATTEMPT=1")
 	cmd.Env = append(cmd.Env, extra...)
 	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		_, artifactErr := os.Stat(filepath.Join(dir, "reports", "image-digest.txt"))
+		require.ErrorIs(t, artifactErr, os.ErrNotExist, "a failed release must not publish its digest artifact")
+	}
 	log, _ := os.ReadFile(trace)
 	return string(log), string(out), runErr
 }
@@ -230,23 +333,34 @@ func TestReleaseSealScansBothPlatformsBeforeSigningDigest(t *testing.T) {
 	log, output, err := runReleaseScript(t, "release.sh", "seal", "")
 	require.NoError(t, err, output)
 	ref := "ghcr.io/example/portal@sha256:" + strings.Repeat("a", 64)
-	for _, arch := range []string{"amd64", "arm64"} {
-		require.Contains(t, log, "syft|registry:"+ref+"|--platform|linux/"+arch)
-		require.Contains(t, log, "cyclonedx-json=reports/sbom-"+arch+".cdx.json")
-		require.Contains(t, log, "spdx-json=reports/sbom-"+arch+".spdx.json")
-		require.Contains(t, log, "trivy|image|--image-src|remote|--platform|linux/"+arch+"|--scanners|vuln|--severity|HIGH,CRITICAL|--ignorefile|/dev/null|--exit-code|1")
-		for _, format := range []string{"cyclonedx", "spdxjson"} {
-			require.Contains(t, log, "cosign|attest|--yes|--type|"+format)
-		}
-		require.Contains(t, log, "cosign|attest|--yes|--type|cyclonedx|--predicate|reports/sbom-"+arch+".cdx.json|"+ref)
-		require.Contains(t, log, "cosign|attest|--yes|--type|spdxjson|--predicate|reports/sbom-"+arch+".spdx.json|"+ref)
+	verification := "|--certificate-identity|https://github.com/example/portal/.github/workflows/release.yaml@refs/tags/v1.2.3|--certificate-oidc-issuer|https://token.actions.githubusercontent.com|--certificate-github-workflow-sha|" + strings.Repeat("b", 40)
+	// Full argv and order are the contract: a nearby correct identity or digest
+	// in a different command cannot satisfy another command's verification.
+	expected := []string{
+		"syft|registry:" + ref + "|--platform|linux/amd64|-o|cyclonedx-json=reports/sbom-amd64.cdx.json|-o|spdx-json=reports/sbom-amd64.spdx.json",
+		"trivy|image|--image-src|remote|--platform|linux/amd64|--scanners|vuln|--severity|HIGH,CRITICAL|--ignorefile|/dev/null|--exit-code|1|--format|json|--output|reports/trivy-amd64.json|" + ref,
+		"syft|registry:" + ref + "|--platform|linux/arm64|-o|cyclonedx-json=reports/sbom-arm64.cdx.json|-o|spdx-json=reports/sbom-arm64.spdx.json",
+		"trivy|image|--image-src|remote|--platform|linux/arm64|--scanners|vuln|--severity|HIGH,CRITICAL|--ignorefile|/dev/null|--exit-code|1|--format|json|--output|reports/trivy-arm64.json|" + ref,
+		"cosign|sign|--yes|" + ref,
+		"cosign|attest|--yes|--type|cyclonedx|--predicate|reports/sbom-amd64.cdx.json|" + ref,
+		"cosign|attest|--yes|--type|spdxjson|--predicate|reports/sbom-amd64.spdx.json|" + ref,
+		"cosign|attest|--yes|--type|cyclonedx|--predicate|reports/sbom-arm64.cdx.json|" + ref,
+		"cosign|attest|--yes|--type|spdxjson|--predicate|reports/sbom-arm64.spdx.json|" + ref,
+		"cosign|verify|" + ref + verification,
+		"cosign|verify-attestation|" + ref + "|--type|cyclonedx" + verification,
+		"cosign|verify-attestation|" + ref + "|--type|spdxjson" + verification,
 	}
-	require.Contains(t, log, "cosign|sign|--yes|"+ref)
-	require.Less(t, strings.LastIndex(log, "trivy|"), strings.Index(log, "cosign|sign|"))
-	require.Contains(t, log, "cosign|verify|"+ref)
-	require.Contains(t, log, "--certificate-identity|https://github.com/example/portal/.github/workflows/release.yaml@refs/tags/v1.2.3")
-	require.Contains(t, log, "--certificate-oidc-issuer|https://token.actions.githubusercontent.com")
+	require.Equal(t, expected, strings.Split(strings.TrimSpace(log), "\n"))
 	require.NotContains(t, output, "GitOps")
+	// Each late-stage failure must stop exactly there, including the second
+	// architecture scan and each individual attestation verification.
+	for index, command := range expected {
+		t.Run("failure at "+command, func(t *testing.T) {
+			failedLog, _, err := runReleaseScript(t, "release.sh", "seal", "", "FAIL_COMMAND="+strings.ReplaceAll(command, "|", " "))
+			require.Error(t, err)
+			require.Equal(t, expected[:index+1], strings.Split(strings.TrimSpace(failedLog), "\n"))
+		})
+	}
 	for _, tool := range []string{"syft", "trivy", "cosign"} {
 		t.Run(tool+" failure blocks release", func(t *testing.T) {
 			log, out, err := runReleaseScript(t, "release.sh", "seal", tool)
