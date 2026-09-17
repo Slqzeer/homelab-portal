@@ -20,10 +20,12 @@ import (
 	portalhttp "github.com/Slqzeer/homelab-portal/internal/http"
 	"github.com/Slqzeer/homelab-portal/internal/kube"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/types"
 	networkingclient "k8s.io/client-go/kubernetes/typed/networking/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 )
 
 func main() {
@@ -33,6 +35,11 @@ func main() {
 }
 
 func run(logger *slog.Logger) bool {
+	// Configure process-global dependency logging before clients or background
+	// workers start. client-go can log raw errors and URLs outside request
+	// contexts; the watcher supplies our allowlisted operational events instead.
+	klog.SetLoggerWithOptions(logr.Discard(), klog.ContextualLogger(true))
+	klog.EnableContextualLogging(false)
 	fail := func(event string) bool {
 		logger.Error("portal lifecycle", "event", event, "result", "failed")
 		return false
