@@ -283,6 +283,225 @@ func TestWatcherRelistsAfterResourceVersionExpires(t *testing.T) {
 	assert.Equal(t, int32(2), listCalls.Load())
 }
 
+func TestWatcherRevalidatesQuietWatchAndRetainsLastValidSnapshotOnFailedRelist(t *testing.T) {
+	firstStream := watch.NewRaceFreeFake()
+	secondStream := watch.NewRaceFreeFake()
+	watchStarted := make(chan struct{}, 1)
+	failedRelist := make(chan struct{}, 1)
+	releaseRetry := make(chan struct{})
+	var listCalls atomic.Int32
+	initial := publishedIngress("tools", "grafana", "Grafana")
+	source := fakeIngressSource{
+		list: func(context.Context) (*networkingv1.IngressList, error) {
+			switch listCalls.Add(1) {
+			case 1:
+				return &networkingv1.IngressList{
+					ListMeta: metav1.ListMeta{ResourceVersion: "10"},
+					Items:    []networkingv1.Ingress{initial},
+				}, nil
+			case 2:
+				failedRelist <- struct{}{}
+				return nil, errors.New("revalidation unavailable")
+			default:
+				return &networkingv1.IngressList{
+					ListMeta: metav1.ListMeta{ResourceVersion: "20"},
+					Items:    []networkingv1.Ingress{initial},
+				}, nil
+			}
+		},
+		watch: func(context.Context, string) (watch.Interface, error) {
+			if listCalls.Load() == 1 {
+				watchStarted <- struct{}{}
+				return firstStream, nil
+			}
+			return secondStream, nil
+		},
+	}
+
+	start := time.Date(2026, time.September, 17, 12, 0, 0, 0, time.UTC)
+	advanced := start.Add(16 * time.Minute)
+	var clock atomic.Int64
+	clock.Store(start.UnixNano())
+	store := catalog.NewStore(types.NamespacedName{})
+	watcher := NewWatcher(
+		source,
+		store,
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		WithClock(func() time.Time { return time.Unix(0, clock.Load()).UTC() }),
+		WithJitter(func(base time.Duration) time.Duration { return base }),
+		WithSleeper(func(ctx context.Context, _ time.Duration) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-releaseRetry:
+				return nil
+			}
+		}),
+		withRevalidationInterval(50*time.Millisecond),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		watcher.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		firstStream.Stop()
+		secondStream.Stop()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("watcher did not stop after cancellation")
+		}
+	})
+
+	<-watchStarted
+	clock.Store(advanced.UnixNano())
+	<-failedRelist
+	failed := store.Snapshot(advanced)
+	assert.Equal(t, start, failed.LastSuccess)
+	assert.True(t, failed.Expired)
+	assert.Equal(t, []string{"tools/grafana"}, itemIDs(failed.Items))
+
+	close(releaseRetry)
+	require.Eventually(t, func() bool {
+		refreshed := store.Snapshot(advanced)
+		return refreshed.LastSuccess.Equal(advanced) && !refreshed.Stale && !refreshed.Expired &&
+			assert.ObjectsAreEqual([]string{"tools/grafana"}, itemIDs(refreshed.Items))
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestWatcherRevalidationDeadlineSurvivesReconnects(t *testing.T) {
+	firstWatch := make(chan struct{}, 1)
+	var watchCalls atomic.Int32
+	ingress := publishedIngress("tools", "grafana", "Grafana")
+	source := fakeIngressSource{
+		list: func(context.Context) (*networkingv1.IngressList, error) {
+			return &networkingv1.IngressList{
+				ListMeta: metav1.ListMeta{ResourceVersion: "10"},
+				Items:    []networkingv1.Ingress{ingress},
+			}, nil
+		},
+		watch: func(context.Context, string) (watch.Interface, error) {
+			if watchCalls.Add(1) == 1 {
+				firstWatch <- struct{}{}
+			}
+			closedStream := watch.NewRaceFreeFake()
+			closedStream.Stop()
+			return closedStream, nil
+		},
+	}
+
+	start := time.Date(2026, time.September, 17, 12, 0, 0, 0, time.UTC)
+	advanced := start.Add(16 * time.Minute)
+	var clock atomic.Int64
+	clock.Store(start.UnixNano())
+	store := catalog.NewStore(types.NamespacedName{})
+	watcher := NewWatcher(
+		source,
+		store,
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		WithClock(func() time.Time { return time.Unix(0, clock.Load()).UTC() }),
+		WithJitter(func(base time.Duration) time.Duration { return base }),
+		WithSleeper(func(context.Context, time.Duration) error { return nil }),
+		withRevalidationInterval(25*time.Millisecond),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		watcher.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("watcher did not stop after cancellation")
+		}
+	})
+
+	<-firstWatch
+	clock.Store(advanced.UnixNano())
+	require.Eventually(t, func() bool {
+		refreshed := store.Snapshot(advanced)
+		return refreshed.LastSuccess.Equal(advanced) && !refreshed.Expired
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestWatcherBacksOffAcrossRepeatedResourceExpiryRelists(t *testing.T) {
+	stream := watch.NewRaceFreeFake()
+	delays := make(chan time.Duration, 7)
+	var listCalls atomic.Int32
+	var watchCalls atomic.Int32
+	source := fakeIngressSource{
+		list: func(context.Context) (*networkingv1.IngressList, error) {
+			listCalls.Add(1)
+			return &networkingv1.IngressList{ListMeta: metav1.ListMeta{ResourceVersion: "10"}}, nil
+		},
+		watch: func(context.Context, string) (watch.Interface, error) {
+			if watchCalls.Add(1) <= 7 {
+				expiredStream := watch.NewRaceFreeFake()
+				go expiredStream.Error(&metav1.Status{
+					Status: metav1.StatusFailure,
+					Code:   410,
+					Reason: metav1.StatusReasonExpired,
+				})
+				return expiredStream, nil
+			}
+			return stream, nil
+		},
+	}
+	store := catalog.NewStore(types.NamespacedName{})
+	watcher := NewWatcher(
+		source,
+		store,
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		WithJitter(func(base time.Duration) time.Duration { return base }),
+		WithSleeper(func(_ context.Context, delay time.Duration) error {
+			delays <- delay
+			return nil
+		}),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		watcher.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		stream.Stop()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("watcher did not stop after cancellation")
+		}
+	})
+
+	want := []time.Duration{
+		time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+		30 * time.Second,
+	}
+	got := make([]time.Duration, len(want))
+	for i := range got {
+		select {
+		case got[i] = <-delays:
+		case <-time.After(250 * time.Millisecond):
+			t.Fatalf("retry delay %d was not observed", i+1)
+		}
+	}
+	assert.Equal(t, want, got)
+	assert.Equal(t, int32(8), listCalls.Load())
+	assert.Equal(t, int32(8), watchCalls.Load())
+}
+
 func TestWatcherRemainsUninitializedUntilAListSucceeds(t *testing.T) {
 	stream := watch.NewRaceFreeFake()
 	sleepEntered := make(chan struct{}, 1)

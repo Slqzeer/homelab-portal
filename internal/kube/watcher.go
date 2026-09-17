@@ -18,6 +18,7 @@ const (
 	initialListTimeout = 10 * time.Second
 	minRetryDelay      = time.Second
 	maxRetryDelay      = 30 * time.Second
+	revalidationPeriod = time.Minute
 )
 
 // Option configures a Watcher dependency.
@@ -60,6 +61,14 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+func withRevalidationInterval(interval time.Duration) Option {
+	return func(watcher *Watcher) {
+		if interval > 0 {
+			watcher.revalidationInterval = interval
+		}
+	}
+}
+
 // Watcher maintains a last-valid catalog from Kubernetes Ingress list/watch
 // state.
 type Watcher struct {
@@ -69,6 +78,8 @@ type Watcher struct {
 	now    func() time.Time
 	jitter func(time.Duration) time.Duration
 	sleep  func(context.Context, time.Duration) error
+
+	revalidationInterval time.Duration
 }
 
 // NewWatcher creates a read-only Kubernetes catalog watcher.
@@ -81,7 +92,8 @@ func NewWatcher(source IngressSource, store *catalog.Store, options ...Option) *
 		jitter: func(base time.Duration) time.Duration {
 			return base + time.Duration(rand.Int64N(int64(base/2)+1))
 		},
-		sleep: sleepContext,
+		sleep:                sleepContext,
+		revalidationInterval: revalidationPeriod,
 	}
 	for _, option := range options {
 		option(watcher)
@@ -89,10 +101,11 @@ func NewWatcher(source IngressSource, store *catalog.Store, options ...Option) *
 	return watcher
 }
 
-// Run lists current Ingresses, then applies watch state changes until the
-// context is cancelled or the stream disconnects.
+// Run lists current Ingresses, periodically revalidates the complete state,
+// and applies watch state changes until the context is cancelled.
 func (watcher *Watcher) Run(ctx context.Context) {
 	backoff := minRetryDelay
+	recoveringExpiry := false
 	for {
 		listCtx, cancel := context.WithTimeout(ctx, initialListTimeout)
 		list, err := watcher.source.List(listCtx)
@@ -114,7 +127,11 @@ func (watcher *Watcher) Run(ctx context.Context) {
 		watcher.store.Replace(ingressSlice(resources), watcher.now())
 		watcher.logger.Info("kubernetes ingress observation", "event", "list", "result", "rebuilt", "count", len(resources))
 		resourceVersion := list.ResourceVersion
-		backoff = minRetryDelay
+		if !recoveringExpiry {
+			backoff = minRetryDelay
+		}
+		recoveringExpiry = false
+		revalidation := time.NewTimer(watcher.revalidationInterval)
 
 		relist := false
 		for !relist {
@@ -122,31 +139,49 @@ func (watcher *Watcher) Run(ctx context.Context) {
 			if watchErr != nil {
 				if resourceVersionExpired(watchErr) {
 					watcher.logger.Warn("kubernetes ingress observation", "event", "watch", "result", "resource_expired")
+					if !watcher.waitToRetry(ctx, backoff) {
+						revalidation.Stop()
+						return
+					}
+					backoff = nextBackoff(backoff)
+					recoveringExpiry = true
 					relist = true
 					continue
 				}
 				watcher.logger.Warn("kubernetes ingress observation", "event", "watch", "result", "failed")
 				if !watcher.waitToRetry(ctx, backoff) {
+					revalidation.Stop()
 					return
 				}
 				backoff = nextBackoff(backoff)
 				continue
 			}
 
-			outcome := watcher.consumeStream(ctx, stream, resources, &resourceVersion, &backoff)
+			outcome := watcher.consumeStream(ctx, stream, revalidation.C, resources, &resourceVersion, &backoff)
 			stream.Stop()
 			switch outcome {
 			case streamStopped:
+				revalidation.Stop()
 				return
 			case streamExpired:
+				if !watcher.waitToRetry(ctx, backoff) {
+					revalidation.Stop()
+					return
+				}
+				backoff = nextBackoff(backoff)
+				recoveringExpiry = true
+				relist = true
+			case streamRevalidate:
 				relist = true
 			case streamDisconnected:
 				if !watcher.waitToRetry(ctx, backoff) {
+					revalidation.Stop()
 					return
 				}
 				backoff = nextBackoff(backoff)
 			}
 		}
+		revalidation.Stop()
 	}
 }
 
@@ -156,11 +191,13 @@ const (
 	streamStopped streamOutcome = iota
 	streamDisconnected
 	streamExpired
+	streamRevalidate
 )
 
 func (watcher *Watcher) consumeStream(
 	ctx context.Context,
 	stream watch.Interface,
+	revalidation <-chan time.Time,
 	resources map[types.NamespacedName]networkingv1.Ingress,
 	resourceVersion *string,
 	backoff *time.Duration,
@@ -169,6 +206,9 @@ func (watcher *Watcher) consumeStream(
 		select {
 		case <-ctx.Done():
 			return streamStopped
+		case <-revalidation:
+			watcher.logger.Info("kubernetes ingress observation", "event", "revalidate", "result", "scheduled")
+			return streamRevalidate
 		case event, ok := <-stream.ResultChan():
 			if !ok {
 				watcher.logger.Warn("kubernetes ingress observation", "event", "watch", "result", "disconnected")
