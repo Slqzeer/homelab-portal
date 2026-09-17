@@ -1,0 +1,27 @@
+---
+interface Props {
+  categories: string[];
+  count: number;
+}
+
+const { categories, count }: Props = Astro.props;
+---
+
+<section class="catalog-controls" aria-labelledby="catalog-filters-heading">
+  <h3 id="catalog-filters-heading" class="visually-hidden">Find a catalog item</h3>
+  <div class="search-control">
+    <label for="catalog-search">Search catalog</label>
+    <input id="catalog-search" type="search" data-catalog-search autocomplete="off" placeholder="Name, description, or category" />
+  </div>
+  <div class="category-filters" role="group" aria-label="Filter by category">
+    <button class="filter-button" type="button" data-category-filter="" aria-pressed="true" aria-controls="catalog-items">All</button>
+    {categories.map((category) => (
+      <button class="filter-button" type="button" data-category-filter={category} aria-pressed="false" aria-controls="catalog-items">
+        {category}
+      </button>
+    ))}
+  </div>
+  <p class="catalog-status" data-catalog-status role="status" aria-live="polite" aria-atomic="true">
+    {count} catalog {count === 1 ? 'item' : 'items'}
+  </p>
+</section>

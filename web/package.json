@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro build",
-    "lint": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro check"
+    "lint": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro check",
+    "test": "playwright test --config tests/playwright.config.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
     "@astrojs/check": "0.9.10",
+    "@playwright/test": "1.61.0",
     "@tailwindcss/vite": "4.3.3",
     "astro": "7.3.3",
     "cross-env": "10.1.0",

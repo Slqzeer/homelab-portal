@@ -1,0 +1,32 @@
+---
+import '../styles/app.css';
+
+const diagnostics: Array<{ namespace: string; ingress: string; rule: string; remediation: string }> = [];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin diagnostics · Homelab Portal</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header">
+      <div><p class="eyebrow">Read-only operations</p><h1>Admin diagnostics</h1></div>
+      <nav aria-label="Portal"><a class="button button-secondary" href="/">Back to catalogue</a></nav>
+    </header>
+    <main id="main-content" class="site-main" tabindex="-1">
+      <p class="watcher-status"><strong>Catalogue watcher:</strong> starting</p>
+      <div class="table-region" role="region" aria-label="Publication diagnostics" tabindex="0">
+        <table>
+          <thead><tr><th scope="col">Namespace</th><th scope="col">Ingress</th><th scope="col">Rule</th><th scope="col">Remediation</th></tr></thead>
+          <tbody>
+            {diagnostics.map((item) => <tr><td>{item.namespace}</td><td>{item.ingress}</td><td>{item.rule}</td><td>{item.remediation}</td></tr>)}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </body>
+</html>

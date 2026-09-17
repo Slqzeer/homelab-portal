@@ -8,6 +8,7 @@ import (
 
 type pageData struct {
 	Items         []catalog.CatalogItem
+	Categories    []string
 	Stale         bool
 	Authenticated bool
 	IsAdmin       bool
@@ -15,21 +16,27 @@ type pageData struct {
 	Styles        []string
 }
 
-var homeTemplate = template.Must(template.New("home").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head>
-<body><a class="skip-link" href="#main-content">Skip to content</a><header class="site-header"><h1>Homelab Portal</h1>
-{{if .Authenticated}}<form action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit">Sign out</button></form>{{else}}<a href="/auth/login">Sign in</a>{{end}}
-{{if .IsAdmin}}<a href="/admin">Admin diagnostics</a>{{end}}</header><main id="main-content" class="site-main" tabindex="-1"><h2>Service catalogue</h2>
-{{if .Stale}}<p role="status">Catalogue is stale. These are the last available links.</p>{{end}}
-{{range .Items}}<article data-catalog-item><h3><a href="{{.TargetURL}}" rel="noreferrer">{{.Name}}</a></h3><p>{{.Description}}</p><span>{{.Category}}</span></article>{{else}}<p>No catalog items are available.</p>{{end}}
-</main><script src="/app.js" defer></script></body></html>`))
+var homeTemplate = template.Must(template.New("home").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Trusted links to intentionally published homelab services."><title>Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head>
+<body><a class="skip-link" href="#main-content">Skip to content</a>
+<header class="site-header"><div><p class="eyebrow">Tailnet catalogue</p><h1>Homelab Portal</h1></div><nav class="identity-actions" aria-label="Account">
+{{if .Authenticated}}<form action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">Sign out</button></form>{{else}}<a class="button button-secondary" href="/auth/login">Sign in</a>{{end}}
+{{if .IsAdmin}}<a class="button button-secondary" href="/admin">Admin diagnostics</a>{{end}}</nav></header>
+<main id="main-content" class="site-main" tabindex="-1"><div class="catalog-heading"><div><p class="eyebrow">Available to you</p><h2>Service catalogue</h2><p>Open an intentionally published service. Each target application manages its own access.</p></div></div>
+{{if .Stale}}<aside class="stale-banner" role="status" aria-live="polite"><strong>Catalogue is stale. Catalogue information is not current.</strong> Showing the last known catalogue links.</aside>{{end}}
+<section class="catalog-controls" aria-labelledby="catalog-filters-heading"><h3 id="catalog-filters-heading" class="visually-hidden">Find a catalog item</h3><div class="search-control"><label for="catalog-search">Search catalog</label><input id="catalog-search" type="search" data-catalog-search autocomplete="off" placeholder="Name, description, or category"></div>
+<div class="category-filters" role="group" aria-label="Filter by category"><button class="filter-button" type="button" data-category-filter="" aria-pressed="true" aria-controls="catalog-items">All</button>{{range .Categories}}<button class="filter-button" type="button" data-category-filter="{{.}}" aria-pressed="false" aria-controls="catalog-items">{{.}}</button>{{end}}</div>
+<p class="catalog-status" data-catalog-status role="status" aria-live="polite" aria-atomic="true">{{len .Items}} catalog {{if eq (len .Items) 1}}item{{else}}items{{end}}</p></section>
+<section aria-labelledby="catalog-results-heading"><h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3><div id="catalog-items" class="catalog-grid" data-catalog-grid>
+{{range .Items}}<article data-catalog-item class="catalog-card"><img class="catalog-icon" src="/icons/{{.Icon}}.svg" width="40" height="40" alt="" aria-hidden="true"><div><p class="catalog-category" data-catalog-category>{{.Category}}</p><h4 data-catalog-name><a href="{{.TargetURL}}" rel="noreferrer" aria-label="Open {{.Name}}">{{.Name}}</a></h4><p data-catalog-description>{{.Description}}</p></div></article>{{else}}<p class="empty-catalog">No catalog items are available.</p>{{end}}
+</div></section></main><script src="/app.js" defer></script></body></html>`))
 
-var adminTemplate = template.Must(template.New("admin").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Admin diagnostics</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head><body><main class="site-main"><h1>Admin diagnostics</h1>
-<p>Watcher: {{.Watcher}}</p>
-<table><thead><tr><th>Namespace</th><th>Ingress</th><th>Rule</th><th>Remediation</th></tr></thead><tbody>
+var adminTemplate = template.Must(template.New("admin").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin diagnostics · Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head><body><a class="skip-link" href="#main-content">Skip to content</a><header class="site-header"><div><p class="eyebrow">Read-only operations</p><h1>Admin diagnostics</h1></div><nav aria-label="Portal"><a class="button button-secondary" href="/">Back to catalogue</a></nav></header><main id="main-content" class="site-main" tabindex="-1">
+<p class="watcher-status"><strong>Catalogue watcher:</strong> {{.Watcher}}</p>
+<div class="table-region" role="region" aria-label="Publication diagnostics" tabindex="0"><table><thead><tr><th scope="col">Namespace</th><th scope="col">Ingress</th><th scope="col">Rule</th><th scope="col">Remediation</th></tr></thead><tbody>
 {{range .Diagnostics}}<tr><td>{{.Namespace}}</td><td>{{.Ingress}}</td><td>{{.Rule}}</td><td>{{.Remediation}}</td></tr>{{end}}
-</tbody></table></main></body></html>`))
+</tbody></table></div></main></body></html>`))
 
 type adminData struct {
 	Diagnostics []catalog.Diagnostic

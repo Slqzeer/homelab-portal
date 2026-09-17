@@ -1,23 +1,43 @@
 ---
+import CatalogCard from '../components/CatalogCard.astro';
+import CategoryFilter from '../components/CategoryFilter.astro';
+import StaleBanner from '../components/StaleBanner.astro';
 import '../styles/app.css';
+
+const items: Array<{ name: string; description: string; category: string; icon: string; targetURL: string }> = [];
+const categories = [...new Set(items.map((item) => item.category))].sort();
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Trusted links to intentionally published homelab services." />
     <title>Homelab Portal</title>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
-      <h1>Homelab Portal</h1>
+      <div><p class="eyebrow">Tailnet catalogue</p><h1>Homelab Portal</h1></div>
     </header>
     <main id="main-content" class="site-main" tabindex="-1">
-      <h2>Service catalogue</h2>
-      <p>The catalogue will appear here when the portal service is connected.</p>
+      <div class="catalog-heading">
+        <div>
+          <p class="eyebrow">Available to you</p>
+          <h2>Service catalogue</h2>
+          <p>Open an intentionally published service. Each target application manages its own access.</p>
+        </div>
+      </div>
+      <StaleBanner stale={false} />
+      <CategoryFilter categories={categories} count={items.length} />
+      <section aria-labelledby="catalog-results-heading">
+        <h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3>
+        <div id="catalog-items" class="catalog-grid" data-catalog-grid>
+          {items.map((item) => <CatalogCard {...item} />)}
+          {items.length === 0 && <p class="empty-catalog">No catalog items are available.</p>}
+        </div>
+      </section>
     </main>
     <script is:inline src="/app.js" defer></script>
   </body>

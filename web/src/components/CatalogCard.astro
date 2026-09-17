@@ -1,0 +1,31 @@
+---
+interface Props {
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  targetURL: string;
+}
+
+const knownIcons = new Set([
+  'argocd',
+  'generic',
+  'grafana',
+  'keycloak',
+  'kubernetes',
+  'prometheus',
+  'tailscale',
+  'vault',
+]);
+const { name, description, category, targetURL }: Props = Astro.props;
+const icon = knownIcons.has(Astro.props.icon) ? Astro.props.icon : 'generic';
+---
+
+<article data-catalog-item class="catalog-card">
+  <img class="catalog-icon" src={`/icons/${icon}.svg`} width="40" height="40" alt="" aria-hidden="true" />
+  <div>
+    <p class="catalog-category" data-catalog-category>{category}</p>
+    <h4 data-catalog-name><a href={targetURL} rel="noreferrer" aria-label={`Open ${name}`}>{name}</a></h4>
+    <p data-catalog-description>{description}</p>
+  </div>
+</article>

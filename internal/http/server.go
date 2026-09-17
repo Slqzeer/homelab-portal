@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,6 +113,14 @@ func (s *server) home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data.Items = catalog.Visible(snapshot.Items, identity)
+	categorySet := make(map[string]struct{}, len(data.Items))
+	for _, item := range data.Items {
+		categorySet[item.Category] = struct{}{}
+	}
+	for category := range categorySet {
+		data.Categories = append(data.Categories, category)
+	}
+	sort.Strings(data.Categories)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = homeTemplate.Execute(w, data)
 }

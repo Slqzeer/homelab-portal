@@ -1,0 +1,13 @@
+---
+interface Props {
+  stale: boolean;
+}
+
+const { stale }: Props = Astro.props;
+---
+
+{stale && (
+  <aside class="stale-banner" role="status" aria-live="polite">
+    <strong>Catalogue is stale. Catalogue information is not current.</strong> Showing the last known catalogue links.
+  </aside>
+)}
