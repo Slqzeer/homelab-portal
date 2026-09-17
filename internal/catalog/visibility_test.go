@@ -70,7 +70,7 @@ func TestVisibleUsesExactCaseSensitiveGroupIntersection(t *testing.T) {
 	assert.Equal(t, []string{"exact"}, itemIDs(Visible(items, identity)))
 }
 
-func TestVisibleSortsWithoutMutatingInput(t *testing.T) {
+func TestVisibleSortsStablyWithoutMutatingInput(t *testing.T) {
 	items := []CatalogItem{
 		{ID: "zeta", Name: "Zeta", Category: "Beta", Order: 10, Access: AccessPublic},
 		{ID: "bravo", Name: "Bravo", Category: "Alpha", Order: 10, Access: AccessPublic},
@@ -82,7 +82,7 @@ func TestVisibleSortsWithoutMutatingInput(t *testing.T) {
 
 	visible := Visible(items, nil)
 
-	assert.Equal(t, []string{"first", "alpha-1", "alpha-2", "bravo", "zeta"}, itemIDs(visible))
+	assert.Equal(t, []string{"first", "alpha-2", "alpha-1", "bravo", "zeta"}, itemIDs(visible))
 	assert.Equal(t, originalIDs, itemIDs(items))
 }
 

@@ -14,7 +14,7 @@ func Visible(items []CatalogItem, identity *Identity) []CatalogItem {
 		}
 	}
 
-	sort.Slice(visible, func(i, j int) bool {
+	sort.SliceStable(visible, func(i, j int) bool {
 		left, right := visible[i], visible[j]
 		if left.Order != right.Order {
 			return left.Order < right.Order
@@ -25,7 +25,7 @@ func Visible(items []CatalogItem, identity *Identity) []CatalogItem {
 		if left.Name != right.Name {
 			return left.Name < right.Name
 		}
-		return left.ID < right.ID
+		return false
 	})
 
 	return visible

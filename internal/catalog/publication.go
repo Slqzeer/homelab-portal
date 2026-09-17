@@ -94,7 +94,7 @@ func ParseIngress(ing networkingv1.Ingress, portalIngress types.NamespacedName) 
 		return invalid(ing, "exactly_one_hostname", "wait for exactly one LoadBalancer hostname and remove IP or extra entries")
 	}
 	hostname := loadBalancers[0].Hostname
-	if hostname == "" || net.ParseIP(hostname) != nil || len(validation.IsDNS1123Subdomain(hostname)) != 0 {
+	if hostname == "" || net.ParseIP(hostname) != nil || hasIPv4NumberSyntax(hostname) || len(validation.IsDNS1123Subdomain(hostname)) != 0 {
 		return invalid(ing, "exactly_one_hostname", "wait for exactly one valid DNS LoadBalancer hostname")
 	}
 	target := (&url.URL{
@@ -116,6 +116,51 @@ func ParseIngress(ing networkingv1.Ingress, portalIngress types.NamespacedName) 
 	}
 
 	return Candidate{Item: &item}, nil
+}
+
+// hasIPv4NumberSyntax rejects the alternate decimal, octal, hexadecimal, and
+// abbreviated forms that browsers can interpret as IPv4 addresses. Tailscale
+// DNS hostnames contain non-numeric labels, so conservative rejection is safe.
+func hasIPv4NumberSyntax(hostname string) bool {
+	parts := strings.Split(hostname, ".")
+	if len(parts) > 4 {
+		return false
+	}
+
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		if strings.HasPrefix(part, "0x") {
+			if len(part) == 2 || !allASCIIHexDigits(part[2:]) {
+				return false
+			}
+			continue
+		}
+		if !allASCIIDecimalDigits(part) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func allASCIIDecimalDigits(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func allASCIIHexDigits(value string) bool {
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func invalid(ing networkingv1.Ingress, rule, remediation string) (Candidate, *Diagnostic) {
