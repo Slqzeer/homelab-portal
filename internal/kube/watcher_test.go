@@ -685,3 +685,44 @@ func itemIDs(items []catalog.CatalogItem) []string {
 	}
 	return ids
 }
+
+func TestWatcherStatusReportsReconnectDurationAndRecovery(t *testing.T) {
+	stream := watch.NewRaceFreeFake()
+	retryEntered := make(chan struct{}, 1)
+	releaseRetry := make(chan struct{})
+	var calls atomic.Int32
+	start := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	source := fakeIngressSource{
+		list: func(context.Context) (*networkingv1.IngressList, error) { return &networkingv1.IngressList{}, nil },
+		watch: func(context.Context, string) (watch.Interface, error) {
+			if calls.Add(1) == 1 {
+				return nil, errors.New("private provider error")
+			}
+			return stream, nil
+		},
+	}
+	watcher := NewWatcher(source, catalog.NewStore(types.NamespacedName{}), WithClock(func() time.Time { return start }), WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), WithSleeper(func(ctx context.Context, _ time.Duration) error {
+		retryEntered <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-releaseRetry:
+			return nil
+		}
+	}))
+	require.Equal(t, "starting", watcher.Status(start).State)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { watcher.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); stream.Stop(); <-done })
+	<-retryEntered
+	status := watcher.Status(start.Add(125 * time.Second))
+	assert.Equal(t, "reconnecting", status.State)
+	assert.Equal(t, 125*time.Second, status.ReconnectDuration)
+	close(releaseRetry)
+	require.Eventually(t, func() bool { return watcher.Status(start.Add(126*time.Second)).State == "watching" }, time.Second, time.Millisecond)
+	assert.Zero(t, watcher.Status(start.Add(126*time.Second)).ReconnectDuration)
+	cancel()
+	<-done
+	assert.Equal(t, "stopped", watcher.Status(start).State)
+}

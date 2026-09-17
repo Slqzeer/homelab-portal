@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Slqzeer/homelab-portal/internal/catalog"
@@ -80,11 +81,44 @@ type Watcher struct {
 	sleep  func(context.Context, time.Duration) error
 
 	revalidationInterval time.Duration
+	statusMu             sync.RWMutex
+	state                string
+	reconnectingSince    time.Time
+}
+
+// Status contains only allowlisted operational data, never resource or error data.
+type Status struct {
+	State             string
+	ReconnectDuration time.Duration
+}
+
+func (watcher *Watcher) Status(now time.Time) Status {
+	watcher.statusMu.RLock()
+	defer watcher.statusMu.RUnlock()
+	status := Status{State: watcher.state}
+	if !watcher.reconnectingSince.IsZero() {
+		status.ReconnectDuration = max(0, now.Sub(watcher.reconnectingSince))
+	}
+	return status
+}
+
+func (watcher *Watcher) setState(state string) {
+	watcher.statusMu.Lock()
+	defer watcher.statusMu.Unlock()
+	if state == "reconnecting" {
+		if watcher.reconnectingSince.IsZero() {
+			watcher.reconnectingSince = watcher.now()
+		}
+	} else {
+		watcher.reconnectingSince = time.Time{}
+	}
+	watcher.state = state
 }
 
 // NewWatcher creates a read-only Kubernetes catalog watcher.
 func NewWatcher(source IngressSource, store *catalog.Store, options ...Option) *Watcher {
 	watcher := &Watcher{
+		state:  "starting",
 		source: source,
 		store:  store,
 		logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)),
@@ -104,6 +138,7 @@ func NewWatcher(source IngressSource, store *catalog.Store, options ...Option) *
 // Run lists current Ingresses, periodically revalidates the complete state,
 // and applies watch state changes until the context is cancelled.
 func (watcher *Watcher) Run(ctx context.Context) {
+	defer watcher.setState("stopped")
 	backoff := minRetryDelay
 	recoveringExpiry := false
 	for {
@@ -157,6 +192,7 @@ func (watcher *Watcher) Run(ctx context.Context) {
 				continue
 			}
 
+			watcher.setState("watching")
 			outcome := watcher.consumeStream(ctx, stream, revalidation.C, resources, &resourceVersion, &backoff)
 			stream.Stop()
 			switch outcome {
@@ -266,6 +302,7 @@ func ingressSlice(resources map[types.NamespacedName]networkingv1.Ingress) []net
 }
 
 func (watcher *Watcher) waitToRetry(ctx context.Context, base time.Duration) bool {
+	watcher.setState("reconnecting")
 	delay := watcher.jitter(base)
 	if delay < minRetryDelay {
 		delay = minRetryDelay
