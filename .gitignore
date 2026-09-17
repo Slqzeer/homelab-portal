@@ -16,3 +16,4 @@
 *.pem
 
 coverage.out
+/reports/

@@ -6,6 +6,7 @@ portal
 portal.exe
 bin
 coverage.out
+reports
 
 .env
 .env.*
