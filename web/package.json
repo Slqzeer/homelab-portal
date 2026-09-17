@@ -1,0 +1,18 @@
+{
+  "name": "homelab-portal-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "lint": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro check"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.3.3",
+    "cross-env": "10.1.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3"
+  }
+}
