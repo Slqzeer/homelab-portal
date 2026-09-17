@@ -1,0 +1,11 @@
+# Replace this deliberately non-deployable placeholder with an approved digest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homelab-portal
+spec:
+  template:
+    spec:
+      containers:
+        - name: portal
+          image: registry.example/homelab-portal@sha256:0000000000000000000000000000000000000000000000000000000000000000

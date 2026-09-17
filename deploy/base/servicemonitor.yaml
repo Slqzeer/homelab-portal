@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: homelab-portal
+  labels:
+    app.kubernetes.io/name: homelab-portal
+spec:
+  namespaceSelector:
+    matchNames: [portal]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homelab-portal
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homelab-portal
+data:
+  PORT: "8080"
+  PORTAL_BASE_URL: https://portal.example.ts.net
+  OIDC_ISSUER_URL: https://keycloak.example.ts.net/realms/homelab
+  OIDC_CLIENT_ID: homelab-portal
+  OIDC_GROUPS_CLAIM: groups
+  PORTAL_INGRESS_NAMESPACE: portal
+  PORTAL_INGRESS_NAME: homelab-portal
+  OIDC_CLIENT_SECRET_FILE: /var/run/portal-secrets/oidc-client-secret
+  SESSION_CURRENT_KEY_FILE: /var/run/portal-secrets/session-current-key
+  # During rotation only, set SESSION_PREVIOUS_KEY_FILE to the mounted
+  # session-previous-key file after VSO supplies it. Never put key data here.

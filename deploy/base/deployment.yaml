@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homelab-portal
+  labels:
+    app.kubernetes.io/name: homelab-portal
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homelab-portal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homelab-portal
+    spec:
+      serviceAccountName: homelab-portal
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: portal
+          image: registry.example/homelab-portal@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: homelab-portal
+          volumeMounts:
+            - name: portal-secrets
+              mountPath: /var/run/portal-secrets
+              readOnly: true
+          # Kubelet probes the pod port used by the internal Service. Probing
+          # the Service DNS name would couple readiness to Service routing.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 25m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: portal-secrets
+          secret:
+            secretName: homelab-portal-secrets
+            defaultMode: 0440

@@ -1,0 +1,42 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: homelab-portal
+  labels:
+    app.kubernetes.io/name: homelab-portal
+spec:
+  groups:
+    - name: homelab-portal
+      rules:
+        - alert: PortalInitialListFailed
+          expr: portal_catalog_initialized{namespace="portal",service="homelab-portal"} == 0
+          for: 10s
+          labels:
+            severity: critical
+          annotations:
+            summary: Portal initial Kubernetes list has not succeeded
+            description: Check Ingress read permissions and API connectivity; initialization allows a ten-second list deadline.
+        - alert: PortalCatalogExpired
+          expr: portal_catalog_state{namespace="portal",service="homelab-portal",state="expired"} == 1
+          for: 0s
+          labels:
+            severity: critical
+          annotations:
+            summary: Portal catalog has expired
+            description: The last successful catalog refresh is at least fifteen minutes old; readiness fails while stale links remain visible.
+        - alert: PortalWatchReconnecting
+          expr: portal_watch_reconnect_duration_seconds{namespace="portal",service="homelab-portal"} > 120
+          for: 0s
+          labels:
+            severity: warning
+          annotations:
+            summary: Portal watch has been reconnecting for more than two minutes
+            description: Check Kubernetes API reachability and Ingress watch permissions.
+        - alert: PortalInvalidMetadata
+          expr: portal_invalid_publications{namespace="portal",service="homelab-portal"} > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Portal publication metadata remains invalid
+            description: Review admin diagnostics and correct the publication metadata in GitOps.

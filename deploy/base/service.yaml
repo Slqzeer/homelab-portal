@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: homelab-portal
+  labels:
+    app.kubernetes.io/name: homelab-portal
+spec:
+  type: ClusterIP
+  # Keep failed-initial-list/expired-cache metrics and stale catalog reachable.
+  # Readiness still reports failure to Kubernetes/Argo; liveness stays separate.
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: homelab-portal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

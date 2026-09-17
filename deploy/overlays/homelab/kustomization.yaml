@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: image-patch.yaml
+  # Non-secret site configuration. These example addresses intentionally
+  # cannot reach a real API. Set exact VIP/endpoint /32s (or IPv6 /128s).
+  # Verify selectors against the actual proxy, scraper, DNS and Keycloak pods.
+  - target:
+      kind: NetworkPolicy
+      name: homelab-portal
+    patch: |-
+      - op: replace
+        path: /spec/ingress/0/from/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name
+        value: tailscale
+      - op: replace
+        path: /spec/ingress/0/from/0/podSelector/matchLabels
+        value:
+          tailscale.com/parent-resource: homelab-portal
+          tailscale.com/parent-resource-ns: portal
+          tailscale.com/parent-resource-type: ingress
+      - op: replace
+        path: /spec/ingress/1/from/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name
+        value: monitoring
+      - op: replace
+        path: /spec/ingress/1/from/0/podSelector/matchLabels
+        value:
+          app.kubernetes.io/name: prometheus
+          operator.prometheus.io/name: homelab
+      - op: replace
+        path: /spec/egress/1/to/0/ipBlock/cidr
+        value: 192.0.2.1/32
+      - op: replace
+        path: /spec/egress/1/to/1/ipBlock/cidr
+        value: 198.51.100.1/32
+      - op: replace
+        path: /spec/egress/2/to/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name
+        value: keycloak
+      - op: replace
+        path: /spec/egress/2/to/0/podSelector/matchLabels
+        value:
+          app.kubernetes.io/name: keycloak
+          app.kubernetes.io/instance: homelab
+      - op: replace
+        path: /spec/egress/2/ports/0/port
+        value: 8443
