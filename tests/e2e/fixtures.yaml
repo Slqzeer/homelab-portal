@@ -1,0 +1,76 @@
+# Bootstrap template only. Provision in an isolated cluster through reviewed CI.
+# Replace RUN_ID, FIXTURE_NAMESPACE, and BACKEND_IMAGE (immutable BusyBox digest).
+# The harness never applies this template or deletes these prerequisite objects.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: FIXTURE_NAMESPACE
+  labels:
+    acceptance.homelab.io/run: RUN_ID
+    acceptance.homelab.io/disposable: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acceptance-backend
+  namespace: FIXTURE_NAMESPACE
+  labels:
+    acceptance.homelab.io/run: RUN_ID
+    acceptance.homelab.io/disposable: "true"
+spec:
+  selector:
+    acceptance.homelab.io/backend: RUN_ID
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acceptance-backend
+  namespace: FIXTURE_NAMESPACE
+  labels:
+    acceptance.homelab.io/run: RUN_ID
+    acceptance.homelab.io/disposable: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      acceptance.homelab.io/backend: RUN_ID
+  template:
+    metadata:
+      labels:
+        acceptance.homelab.io/backend: RUN_ID
+        acceptance.homelab.io/run: RUN_ID
+        acceptance.homelab.io/disposable: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: http
+          image: BACKEND_IMAGE
+          command: [sh, -c, "mkdir -p /tmp/www; printf 'fixture\\n' > /tmp/www/index.html; exec httpd -f -p 8080 -h /tmp/www"]
+          ports:
+            - containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
