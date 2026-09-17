@@ -1,122 +1,91 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
-const catalogScript = fileURLToPath(new URL('../src/scripts/catalog.js', import.meta.url));
-const catalogStyles = fileURLToPath(new URL('../src/styles/app.css', import.meta.url));
+const baseURL = 'https://127.0.0.1:4173';
+const longName = 'N'.repeat(80);
+const longDescription = 'D'.repeat(240);
+const longCategory = 'C'.repeat(40);
 
-const renderedCatalog = `<!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>Catalog fixture</title></head>
-  <body>
-    <main>
-      <h1>Service catalogue</h1>
-      <section class="catalog-controls" aria-labelledby="catalog-filters-heading">
-        <h2 id="catalog-filters-heading">Find a catalog item</h2>
-        <label for="catalog-search">Search catalog</label>
-        <input id="catalog-search" type="search" data-catalog-search>
-        <div role="group" aria-label="Filter by category">
-          <button type="button" data-category-filter="" aria-pressed="true">All</button>
-          <button type="button" data-category-filter="Monitoring" aria-pressed="false">Monitoring</button>
-          <button type="button" data-category-filter="Identity" aria-pressed="false">Identity</button>
-        </div>
-        <p data-catalog-status role="status" aria-live="polite">3 catalog items</p>
-      </section>
-      <section aria-labelledby="catalog-results-heading">
-        <h2 id="catalog-results-heading">Catalog items</h2>
-        <div class="catalog-grid" data-catalog-grid>
-          <article data-catalog-item>
-            <h3 data-catalog-name><a href="https://grafana.tail.example">Grafana</a></h3>
-            <p data-catalog-description>Metrics and dashboards</p>
-            <p data-catalog-category>Monitoring</p>
-          </article>
-          <article data-catalog-item>
-            <h3 data-catalog-name><a href="https://prometheus.tail.example">Prometheus</a></h3>
-            <p data-catalog-description>Time-series metrics</p>
-            <p data-catalog-category>Monitoring</p>
-          </article>
-          <article data-catalog-item>
-            <h3 data-catalog-name><a href="https://keycloak.tail.example">Keycloak</a></h3>
-            <p data-catalog-description>Single sign-on</p>
-            <p data-catalog-category>Identity</p>
-          </article>
-        </div>
-      </section>
-    </main>
-  </body>
-</html>`;
+const visibleArticles = (page) => page.locator('article[data-catalog-item]:visible');
 
-async function loadCatalog(page) {
-  await page.setContent(renderedCatalog);
-  await page.addScriptTag({ path: catalogScript });
-}
-
-async function loadCatalogWithStyles(page) {
-  await loadCatalog(page);
-  const css = (await readFile(catalogStyles, 'utf8'))
-    .replace(/^@config.*$/gm, '')
-    .replace(/^@import.*$/gm, '');
-  await page.addStyleTag({ content: css });
-}
-
-test('search filters the delivered cards by visible name without requesting data', async ({ page }) => {
-  await loadCatalog(page);
+test('production-rendered anonymous cards filter locally and never request catalogue data', async ({ page }) => {
   const requests = [];
   page.on('request', (request) => requests.push(request.url()));
 
-  await page.getByRole('searchbox', { name: 'Search catalog' }).fill('gRaF');
+  await page.goto(baseURL);
+  await expect(page.getByRole('heading', { level: 1, name: 'Homelab Portal' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Service catalogue' })).toBeVisible();
+  await expect(page.locator('article.catalog-card img.catalog-icon')).toHaveCount(4);
+  await expect(visibleArticles(page)).toHaveCount(4);
 
-  await expect(page.getByRole('article').filter({ hasText: 'Grafana' })).toBeVisible();
-  await expect(page.getByRole('article').filter({ hasText: 'Prometheus' })).toBeHidden();
-  await expect(page.getByRole('article').filter({ hasText: 'Keycloak' })).toBeHidden();
-  await expect(page.getByRole('status')).toHaveText('1 catalog item');
-  expect(requests).toEqual([]);
-});
+  const anonymousHTML = await page.content();
+  expect(anonymousHTML).not.toContain('Secret Admin');
+  expect(anonymousHTML).not.toContain('secret-admin.tail.example');
 
-test('description and category search combine with keyboard-operable category buttons', async ({ page }) => {
-  await loadCatalog(page);
+  for (const requestURL of requests) {
+    const requested = new URL(requestURL);
+    expect(requested.origin).toBe(baseURL);
+    expect(requested.pathname).toMatch(/^\/$|^\/app\.js$|^\/_astro\/.+\.css$|^\/icons\/.+\.svg$/);
+  }
+  const initializationRequests = [...requests];
+
   const search = page.getByRole('searchbox', { name: 'Search catalog' });
   const monitoring = page.getByRole('button', { name: 'Monitoring' });
   const all = page.getByRole('button', { name: 'All' });
 
-  await page.keyboard.press('Tab');
-  await expect(search).toBeFocused();
-  await search.fill('TIME-series');
-  await expect(page.getByRole('article').filter({ hasText: 'Prometheus' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('1 catalog item');
+  await search.fill('gRaF');
+  await expect(visibleArticles(page)).toHaveCount(1);
+  await expect(page.getByRole('article').filter({ hasText: 'Grafana' })).toBeVisible();
 
   await search.fill('iDENTity');
+  await expect(visibleArticles(page)).toHaveCount(1);
   await expect(page.getByRole('article').filter({ hasText: 'Keycloak' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('1 catalog item');
 
-  await search.fill('');
+  await search.fill('TIME-series');
   await monitoring.focus();
   await page.keyboard.press('Enter');
   await expect(monitoring).toBeFocused();
   await expect(monitoring).toHaveAttribute('aria-pressed', 'true');
   await expect(all).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByRole('article').filter({ hasText: 'Grafana' })).toBeVisible();
+  await expect(visibleArticles(page)).toHaveCount(1);
   await expect(page.getByRole('article').filter({ hasText: 'Prometheus' })).toBeVisible();
-  await expect(page.getByRole('article').filter({ hasText: 'Keycloak' })).toBeHidden();
+  await expect(page.getByRole('status')).toHaveText('1 catalog item');
+
+  await search.fill('');
+  await expect(visibleArticles(page)).toHaveCount(2);
+  await expect(page.getByRole('status')).toHaveText('2 catalog items');
 
   await all.click();
-  await expect(page.getByRole('article')).toHaveCount(3);
-  for (const article of await page.getByRole('article').all()) {
-    await expect(article).toBeVisible();
-  }
-  await expect(page.getByRole('status')).toHaveText('3 catalog items');
+  await expect(visibleArticles(page)).toHaveCount(4);
+  await expect(page.getByRole('status')).toHaveText('4 catalog items');
+  expect(await page.content()).not.toContain('Secret Admin');
+  expect(requests).toEqual(initializationRequests);
 });
 
-test('the narrow catalogue is accessible and exposes visible keyboard focus', async ({ page }) => {
+test('production-rendered admin identity receives its authorized card set', async ({ page }) => {
+  await page.goto(`${baseURL}/__test/admin`);
+
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
+  await expect(visibleArticles(page)).toHaveCount(5);
+  await expect(page.getByRole('article').filter({ hasText: 'Secret Admin' })).toBeVisible();
+  await expect(page.locator('a[href="https://secret-admin.tail.example"]')).toHaveCount(1);
+  await expect(page.locator('img[src="/icons/generic.svg"]')).toHaveCount(2);
+});
+
+test('compiled production layout wraps maximum valid catalogue text at a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
-  await loadCatalogWithStyles(page);
+  await page.goto(baseURL);
 
   const accessibility = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
   expect(accessibility.violations).toEqual([]);
 
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
   await page.keyboard.press('Tab');
   const search = page.getByRole('searchbox', { name: 'Search catalog' });
   await expect(search).toBeFocused();
@@ -134,13 +103,14 @@ test('the narrow catalogue is accessible and exposes visible keyboard focus', as
     outlineWidth: '3px',
   });
 
-  const layout = await page.locator('[data-catalog-grid]').evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { columns: style.gridTemplateColumns.split(' ').length, display: style.display };
-  });
-  expect(layout).toEqual({ columns: 1, display: 'grid' });
-  const horizontallyScrollable = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  );
-  expect(horizontallyScrollable).toBe(false);
+  await expect(page.getByRole('link', { name: `Open ${longName}` })).toBeVisible();
+  await expect(page.getByText(longDescription, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: longCategory })).toBeVisible();
+  await expect(page.locator('[data-catalog-grid]')).toHaveCSS('display', 'grid');
+
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions).toEqual({ clientWidth: 360, scrollWidth: 360 });
 });

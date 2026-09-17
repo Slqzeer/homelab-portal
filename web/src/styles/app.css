@@ -119,6 +119,7 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
+    min-width: 0;
   }
 
   .identity-actions form {
@@ -138,6 +139,13 @@
     cursor: pointer;
     font-weight: 650;
     text-decoration: none;
+  }
+
+  .filter-button {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: start;
   }
 
   .filter-button[aria-pressed='true'] {
@@ -213,6 +221,14 @@
     padding: 1.25rem;
     background: rgb(30 41 59 / 88%);
     box-shadow: 0 0.75rem 2rem rgb(2 6 23 / 20%);
+  }
+
+  .catalog-card > div {
+    min-width: 0;
+  }
+
+  .catalog-card :where(h4, a, p) {
+    overflow-wrap: anywhere;
   }
 
   .catalog-card h4 {

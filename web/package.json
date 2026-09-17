@@ -6,6 +6,7 @@
   "scripts": {
     "build": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro build",
     "lint": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro check",
+    "pretest": "npm run build",
     "test": "playwright test --config tests/playwright.config.mjs"
   },
   "devDependencies": {
