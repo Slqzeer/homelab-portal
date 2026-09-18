@@ -68,6 +68,8 @@ case "${1:-}" in
       tee -a "${GITHUB_STEP_SUMMARY:?}"
     printf '%s\n' \
       'Open a reviewed GitOps change pinning exactly this image digest and application revision.' \
+      'Ingress backend: Service port public (8080) only; operations (8081) stays internal. Apply the matching ConfigMap, Service, probes, ServiceMonitor and NetworkPolicy changes together.' \
+      'Retain a passing isolated live report from docs/runbooks/acceptance.md before promotion.' \
       'Follow docs/runbooks/release.md. This workflow does not edit or sync deployment manifests.' \
       'Rollback: Git revert to the prior reviewed digest and revision.' |
       tee -a "$GITHUB_STEP_SUMMARY"

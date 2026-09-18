@@ -22,7 +22,7 @@ policies to whole namespaces, CIDR ranges, or all ports to work around a failure
 | Resource | Values to set or verify |
 | --- | --- |
 | Deployment image patch | Approved registry and SHA-256 image digest |
-| ConfigMap | Portal HTTPS URL, Keycloak issuer URL, portal Ingress identity |
+| ConfigMap | Portal HTTPS URL, Keycloak issuer URL, portal Ingress identity; distinct `PORT` (8080) and `OPERATIONS_PORT` (8081) |
 | VaultStaticSecret | Existing VaultAuth reference, KV-v2 mount and path |
 | NetworkPolicy ingress | Tailscale operator namespace and exact parent Ingress identity labels; Prometheus namespace and named scraper labels |
 | NetworkPolicy DNS egress | Actual kube-dns namespace/labels and TCP/UDP 53; NodeLocal DNS needs a separately reviewed narrow address exception |
@@ -57,16 +57,33 @@ single-process session model, accepting downtime/session loss on restart.
 
 ## Internal operations
 
-The ClusterIP Service exposes port 8080. Kubelet probes use that same named pod
+The application binds two independent HTTP listeners. `PORT` retains its public
+default of 8080; `OPERATIONS_PORT` defaults to 8081. Both must be integers in
+1–65535 and must differ. The ClusterIP Service and container declare `public`
+(8080) and `operations` (8081). Kubelet probes use the named `operations` pod
 port directly; using Service DNS in readiness would introduce a routing cycle.
 The Service publishes unready addresses so failed-initial-list and expired-cache
 metrics remain scrapeable and the application can still show its last valid
 links. Readiness still fails; it is not a traffic gate for this Service.
 
-NetworkPolicy restricts peers and ports, not HTTP paths. External Tailscale
-Ingress must explicitly allow only UI/auth/catalog routes and exclude
-`/healthz`, `/readyz`, and `/metrics`; a catch-all `/` rule would expose them.
-The metrics scraper has access to this internal HTTP port. Prometheus rules
+The public listener serves `/`, `/admin`, the auth routes and explicit embedded
+assets. `/healthz`, `/readyz`, and `/metrics` return 404 there, including for
+admins, with the usual security headers. The operations listener serves only
+those three operational paths; UI/auth/admin/assets return 404.
+
+External Tailscale Ingress must route `/` with `pathType: Prefix` to Service
+`homelab-portal`, port **`public`**. Never reference `operations` in an Ingress.
+This is enforced by separate application route tables, independent of hosts or
+forwarded headers. Tailscale supports only prefix path matching, including when
+another path type is specified; path exclusions cannot provide this boundary
+([operator limitations](https://tailscale.com/docs/kubernetes-operator/reference/limitations)).
+
+NetworkPolicy separately allows the selected Tailscale proxy to TCP 8080 and the
+selected metrics scraper to TCP 8081. Keep each peer and its port in its own
+rule; combining both peers and both ports would allow both peers to both ports.
+ServiceMonitor scrapes `operations`. Coordinate any port override across the
+ConfigMap, container/Service ports and NetworkPolicy. Both servers drain within
+one shared 20-second shutdown deadline. Prometheus rules
 scope metrics to namespace `portal` and Service `homelab-portal`; retain those
 target labels when customizing discovery. Reconnect alerts use the elapsed-time
 gauge directly (>120 seconds), with no second two-minute delay. Invalid metadata

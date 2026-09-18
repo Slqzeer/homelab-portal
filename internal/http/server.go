@@ -40,7 +40,18 @@ type server struct {
 	styles       []string
 }
 
-func New(options Options) (http.Handler, error) {
+// Handlers exposes disjoint route tables sharing one catalogue/session runtime.
+// ServeHTTP is the public listener; Operations must use a separate listener.
+type Handlers struct {
+	Public     http.Handler
+	Operations http.Handler
+}
+
+func (h *Handlers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.Public.ServeHTTP(w, r)
+}
+
+func New(options Options) (*Handlers, error) {
 	if options.Store == nil || options.Sessions == nil || options.Assets == nil {
 		return nil, errors.New("portal HTTP dependencies are required")
 	}
@@ -70,12 +81,9 @@ func New(options Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /admin", s.admin)
-	mux.HandleFunc("GET /healthz", s.health)
-	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/callback", s.callback)
 	mux.HandleFunc("POST /auth/logout", s.logout)
-	mux.Handle("GET /metrics", promhttp.HandlerFor(options.Registry, promhttp.HandlerOpts{}))
 	files := http.FileServer(http.FS(options.Assets))
 	err = fs.WalkDir(options.Assets, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -95,7 +103,11 @@ func New(options Options) (http.Handler, error) {
 	if err := options.Registry.Register(s.metrics); err != nil {
 		return nil, err
 	}
-	return securityHeaders(s.observe(mux)), nil
+	operations := http.NewServeMux()
+	operations.HandleFunc("GET /healthz", s.health)
+	operations.HandleFunc("GET /readyz", s.ready)
+	operations.Handle("GET /metrics", promhttp.HandlerFor(options.Registry, promhttp.HandlerOpts{}))
+	return &Handlers{Public: securityHeaders(s.observe(mux)), Operations: securityHeaders(s.observe(operations))}, nil
 }
 
 func (s *server) home(w http.ResponseWriter, r *http.Request) {

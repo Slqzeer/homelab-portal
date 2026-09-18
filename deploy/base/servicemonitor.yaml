@@ -11,7 +11,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: homelab-portal
   endpoints:
-    - port: http
+    - port: operations
       path: /metrics
       interval: 15s
       scrapeTimeout: 5s

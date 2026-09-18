@@ -56,6 +56,16 @@ Stop on any nonzero exit. Inspect the verified attestation subjects/predicates a
 6. The configured human reviewer approves `production` after these checks. The promotion job prints the exact digest and application commit SHA. Open a separate reviewed change in the GitOps repository pinning that digest and immutable application revision; record the release run/evidence and approval. Task 10 owns the actual external repository paths, Argo Application and centralized Tailscale Ingress. Do not deploy a tag, `latest`, a branch name, or the sample all-zero digest in this repository's overlay.
 7. After that GitOps change is reviewed/merged, check Argo CD reports the intended Git revision, `Synced` and `Healthy`, and Kubernetes runs the corresponding platform image from the approved index. Confirm rollout readiness, catalogue/auth behavior and alerts. This pipeline does **not** establish cluster acceptance: Task 7's API-server dry run/admission, VSO synchronization, real RBAC negative checks, CNI enforcement, Tailscale-only routing, and live alert evaluation remain mandatory Task 9/10 gates.
 
+The listener-separation release requires a coordinated application/GitOps change:
+ConfigMap `PORT=8080` and `OPERATIONS_PORT=8081`, named container/Service ports
+`public` and `operations`, kubelet probes and ServiceMonitor on `operations`, and
+separate proxy-to-public/scraper-to-operations NetworkPolicy rules. Every external
+Tailscale Ingress backend must select Service port `public` only. Its `/` prefix
+is safe because operational routes are absent from that listener. Retain the
+[isolated acceptance report](acceptance.md) proving the exact public Pod route,
+public operational 404s, and internal health/readiness/metrics observations.
+Non-default ports require matching configuration and manifest changes.
+
 ## Rollback
 
-Locate the previous reviewed GitOps commit and its retained digest/evidence. Revert the promotion commit in the GitOps repository through review, restoring both the prior image digest and application revision. Do not rebuild an old tag, mutate a tag, edit live Kubernetes resources, or use an unreviewed Argo override. Once reconciled, verify Argo revision/health, readiness, authentication/catalogue behavior and alerts again. Record the reverted revision, restored digest and outcome in the release record.
+Locate the previous reviewed GitOps commit and its retained digest/evidence. Revert the promotion commit in the GitOps repository through review, restoring the image, application revision, and matching listener manifests together. A single-listener image cannot satisfy the internal-only operations acceptance gate behind a Tailscale `/` prefix; do not expose that image without a separately reviewed isolation mechanism. Do not rebuild an old tag, mutate a tag, edit live Kubernetes resources, or use an unreviewed Argo override. Once reconciled, verify Argo revision/health, readiness, authentication/catalogue behavior and alerts again. Record the reverted revision, restored digest and outcome in the release record.

@@ -24,7 +24,7 @@ type fixture struct {
 	sessions *auth.SessionManager
 	now      time.Time
 	logs     bytes.Buffer
-	handler  http.Handler
+	handler  *portalhttp.Handlers
 }
 
 func newFixture(t *testing.T, configure ...func(*portalhttp.Options)) *fixture {
@@ -74,6 +74,27 @@ func (f *fixture) request(method, path string, cookies ...*http.Cookie) *httptes
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, r)
 	return w
+}
+
+func (f *fixture) operations(path string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	f.handler.Operations.ServeHTTP(w, httptest.NewRequest("GET", "http://operations:8081"+path, nil))
+	return w
+}
+
+func TestOperationsListenerHasNoPagesAuthOrAssets(t *testing.T) {
+	f := newFixture(t)
+	for _, path := range []string{"/", "/admin", "/auth/login", "/auth/callback", "/auth/logout", "/app.js", "/index.html", "/api/catalog"} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			r := httptest.NewRequest(method, "https://portal.example"+path, nil)
+			r.AddCookie(f.cookie(t, "portal-admin"))
+			w := httptest.NewRecorder()
+			f.handler.Operations.ServeHTTP(w, r)
+			if w.Code != 404 || w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Header().Get("Content-Security-Policy") == "" || len(w.Result().Cookies()) != 0 {
+				t.Errorf("operations %s %s = %d, %v", method, path, w.Code, w.Header())
+			}
+		}
+	}
 }
 
 func responseCookie(t *testing.T, w *httptest.ResponseRecorder, name string) *http.Cookie {
@@ -173,6 +194,28 @@ func TestSecurityHeadersApplyToPagesErrorsAndStaticAssets(t *testing.T) {
 	}
 	if w := f.request("POST", "/", nil); w.Code != 405 || w.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Errorf("method rejection = %d, %v", w.Code, w.Header())
+	}
+}
+
+func TestPublicListenerCannotServeOperationsWithAnyIdentityOrProxyHeaders(t *testing.T) {
+	f := newFixture(t)
+	f.store.Replace(nil, f.now)
+	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			for _, cookie := range []*http.Cookie{nil, f.cookie(t, "portal-admin")} {
+				r := httptest.NewRequest(method, "http://internal-service:8080"+path, nil)
+				r.Header.Set("X-Forwarded-Host", "localhost")
+				r.Header.Set("X-Forwarded-For", "127.0.0.1")
+				if cookie != nil {
+					r.AddCookie(cookie)
+				}
+				w := httptest.NewRecorder()
+				f.handler.ServeHTTP(w, r)
+				if w.Code != 404 || w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Header().Get("Content-Security-Policy") == "" {
+					t.Errorf("public %s %s = %d, %v", method, path, w.Code, w.Header())
+				}
+			}
+		}
 	}
 }
 

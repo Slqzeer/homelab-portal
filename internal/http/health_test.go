@@ -9,10 +9,10 @@ import (
 
 func TestReadinessFollowsCatalogFreshnessWhileHealthAndLastLinksSurvive(t *testing.T) {
 	f := newFixture(t)
-	if w := f.request("GET", "/readyz", nil); w.Code != 503 {
+	if w := f.operations("/readyz"); w.Code != 503 {
 		t.Errorf("initial readiness = %d", w.Code)
 	}
-	if w := f.request("GET", "/healthz", nil); w.Code != 200 {
+	if w := f.operations("/healthz"); w.Code != 200 {
 		t.Errorf("initial health = %d", w.Code)
 	}
 	f.store.Replace([]networkingv1.Ingress{ingress("Public", "public", "")}, f.now)
@@ -22,10 +22,10 @@ func TestReadinessFollowsCatalogFreshnessWhileHealthAndLastLinksSurvive(t *testi
 		stale bool
 	}{{0, 200, false}, {2 * time.Minute, 200, true}, {15 * time.Minute, 503, true}} {
 		f.now = time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC).Add(tc.age)
-		if w := f.request("GET", "/readyz", nil); w.Code != tc.ready {
+		if w := f.operations("/readyz"); w.Code != tc.ready {
 			t.Errorf("at %s: readiness = %d", tc.age, w.Code)
 		}
-		if w := f.request("GET", "/healthz", nil); w.Code != 200 {
+		if w := f.operations("/healthz"); w.Code != 200 {
 			t.Errorf("at %s: health = %d", tc.age, w.Code)
 		}
 		w := f.request("GET", "/", nil)

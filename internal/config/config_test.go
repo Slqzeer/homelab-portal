@@ -80,6 +80,24 @@ func TestLoadRejectsInvalidPorts(t *testing.T) {
 	}
 }
 
+func TestLoadSeparatesPublicAndOperationsPorts(t *testing.T) {
+	cfg, err := Load(validEnv(t))
+	require.NoError(t, err)
+	assert.Equal(t, 8080, cfg.Port)
+	assert.Equal(t, 8081, cfg.OperationsPort)
+	cfg, err = Load(append(validEnv(t), "PORT=9000", "OPERATIONS_PORT=9001"))
+	require.NoError(t, err)
+	assert.Equal(t, 9000, cfg.Port)
+	assert.Equal(t, 9001, cfg.OperationsPort)
+	for _, value := range []string{"private-invalid-value", "0", "-1", "65536", "8080"} {
+		_, err := Load(append(validEnv(t), "OPERATIONS_PORT="+value))
+		require.ErrorContains(t, err, "OPERATIONS_PORT")
+		assert.NotContains(t, err.Error(), value)
+	}
+	_, err = Load(append(validEnv(t), "PORT=8081"))
+	require.ErrorContains(t, err, "OPERATIONS_PORT")
+}
+
 func TestLoadRejectsAbsentCurrentSessionKey(t *testing.T) {
 	_, err := Load(withoutEnv(validEnv(t), "SESSION_CURRENT_KEY_FILE"))
 	require.ErrorContains(t, err, "SESSION_CURRENT_KEY_FILE")

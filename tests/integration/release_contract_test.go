@@ -394,6 +394,9 @@ func TestReleaseRequiresRealReviewerProtection(t *testing.T) {
 			} else {
 				require.Contains(t, string(published), "ghcr.io/example/portal@sha256:"+strings.Repeat("a", 64))
 				require.NotContains(t, string(published), ":latest")
+				require.Contains(t, string(published), "Ingress backend: Service port public (8080) only")
+				require.Contains(t, string(published), "operations (8081) stays internal")
+				require.Contains(t, string(published), "docs/runbooks/acceptance.md")
 			}
 			for _, unprotected := range []string{`{}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[{}]}]}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":true,"reviewers":[]}]}`} {
 				_, out, err := runReleaseScript(t, "release.sh", mode, "", append(extra, "ENVIRONMENT_JSON="+unprotected)...)

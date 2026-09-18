@@ -4,6 +4,7 @@ metadata:
   name: homelab-portal
 data:
   PORT: "8080"
+  OPERATIONS_PORT: "8081"
   PORTAL_BASE_URL: https://portal.example.ts.net
   OIDC_ISSUER_URL: https://keycloak.example.ts.net/realms/homelab
   OIDC_CLIENT_ID: homelab-portal

@@ -18,7 +18,14 @@ import (
 // a Service-owned slice, matching addresses/selector, and the exact target port.
 // Unknown intermediary Services and ambiguous targets fail closed.
 func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespace string, backend networkingv1.IngressServiceBackend) (*corev1.Pod, int32, error) {
+	return resolveServiceBackend(ctx, k, namespace, backend, "")
+}
+
+func resolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespace string, backend networkingv1.IngressServiceBackend, requiredPortName string) (*corev1.Pod, int32, error) {
 	bad := errors.New("Service route is absent, ambiguous, or unverified")
+	if (backend.Port.Name == "") == (backend.Port.Number == 0) {
+		return nil, 0, bad
+	}
 	svc, err := k.CoreV1().Services(namespace).Get(ctx, backend.Name, metav1.GetOptions{})
 	if err != nil || svc.UID == "" || svc.Spec.Type != corev1.ServiceTypeClusterIP || net.ParseIP(svc.Spec.ClusterIP) == nil || len(svc.Spec.Selector) == 0 {
 		return nil, 0, bad
@@ -33,7 +40,7 @@ func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespac
 			port = &copy
 		}
 	}
-	if port == nil {
+	if port == nil || (requiredPortName != "" && port.Name != requiredPortName) {
 		return nil, 0, bad
 	}
 	slices, err := k.DiscoveryV1().EndpointSlices(namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set{discoveryv1.LabelServiceName: svc.Name}.String()})
@@ -78,7 +85,7 @@ func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespac
 				for _, container := range pod.Spec.Containers {
 					for _, p := range container.Ports {
 						if p.Name == port.TargetPort.StrVal && (p.Protocol == "" || p.Protocol == corev1.ProtocolTCP) {
-							if target != 0 && target != p.ContainerPort {
+							if target != 0 {
 								return nil, 0, bad
 							}
 							target = p.ContainerPort
@@ -88,7 +95,7 @@ func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespac
 			} else if target == 0 {
 				target = port.Port
 			}
-			if target <= 0 {
+			if target <= 0 || target > 65535 {
 				return nil, 0, bad
 			}
 			matchingPort := false
@@ -97,7 +104,10 @@ func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespac
 				if p.Name != nil {
 					name = *p.Name
 				}
-				if name == port.Name && p.Port != nil && *p.Port == target && (p.Protocol == nil || *p.Protocol == corev1.ProtocolTCP) {
+				if name == port.Name {
+					if matchingPort || p.Port == nil || *p.Port != target || (p.Protocol != nil && *p.Protocol != corev1.ProtocolTCP) {
+						return nil, 0, bad
+					}
 					matchingPort = true
 				}
 			}
@@ -113,9 +123,40 @@ func ResolveServiceBackend(ctx context.Context, k kubernetes.Interface, namespac
 	return resolved, resolvedPort, nil
 }
 
+// PortalListenerPorts binds the two roles to unique TCP declarations owned by
+// the portal container. The internal probes use the operations port directly;
+// neither a Service alias nor a conventional numeric port establishes its role.
+func PortalListenerPorts(pod *corev1.Pod) (int32, int32, error) {
+	bad := errors.New("portal listener ports are absent, conflicting, or ambiguous")
+	if pod == nil {
+		return 0, 0, bad
+	}
+	ports := map[string]int32{}
+	portalCount := 0
+	for _, c := range append(append([]corev1.Container{}, pod.Spec.Containers...), pod.Spec.InitContainers...) {
+		if c.Name == "portal" {
+			portalCount++
+		}
+		for _, p := range c.Ports {
+			if p.Name != "public" && p.Name != "operations" {
+				continue
+			}
+			if c.Name != "portal" || ports[p.Name] != 0 || p.ContainerPort < 1 || p.ContainerPort > 65535 || (p.Protocol != "" && p.Protocol != corev1.ProtocolTCP) {
+				return 0, 0, bad
+			}
+			ports[p.Name] = p.ContainerPort
+		}
+	}
+	if portalCount != 1 || ports["public"] == 0 || ports["operations"] == 0 || ports["public"] == ports["operations"] {
+		return 0, 0, bad
+	}
+	return ports["public"], ports["operations"], nil
+}
+
 func VerifyIngressPodRoute(ctx context.Context, k kubernetes.Interface, ing *networkingv1.Ingress, expected *corev1.Pod) error {
 	bad := errors.New("Ingress does not route exclusively to the verified portal Pod/image")
-	if ing.Namespace != expected.Namespace {
+	publicPort, operationsPort, err := PortalListenerPorts(expected)
+	if err != nil || ing == nil || ing.Namespace != expected.Namespace {
 		return bad
 	}
 	var backends []networkingv1.IngressBackend
@@ -146,8 +187,12 @@ func VerifyIngressPodRoute(ctx context.Context, k kubernetes.Interface, ing *net
 		if backend.Service == nil || backend.Resource != nil {
 			return bad
 		}
-		pod, port, err := ResolveServiceBackend(ctx, k, ing.Namespace, *backend.Service)
-		if err != nil || pod.UID != expected.UID || pod.Name != expected.Name || port != 8080 {
+		pod, port, err := resolveServiceBackend(ctx, k, ing.Namespace, *backend.Service, "public")
+		if err != nil || pod.UID != expected.UID || pod.Name != expected.Name || port != publicPort {
+			return bad
+		}
+		actualPublic, actualOperations, err := PortalListenerPorts(pod)
+		if err != nil || actualPublic != publicPort || actualOperations != operationsPort {
 			return bad
 		}
 		match := false

@@ -41,12 +41,12 @@ func TestMetricsExposeCatalogAndWatcherStateWithoutResourceLabels(t *testing.T) 
 	t.Cleanup(func() { cancel(); <-done })
 	<-retrying
 	f := newFixture(t, func(o *portalhttp.Options) { o.Watcher = watcher; o.Registry = prometheus.NewRegistry() })
-	if w := f.request("GET", "/metrics", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `portal_catalog_state{state="uninitialized"} 1`) {
+	if w := f.operations("/metrics"); w.Code != 200 || !strings.Contains(w.Body.String(), `portal_catalog_state{state="uninitialized"} 1`) {
 		t.Fatalf("initial metrics = %d %s", w.Code, w.Body)
 	}
 	f.store.Replace([]networkingv1.Ingress{ingress("PrivateName", "admin", ""), ingress("InvalidName", "broken-secret", "")}, start)
 	f.now = start.Add(125 * time.Second)
-	w := f.request("GET", "/metrics", nil)
+	w := f.operations("/metrics")
 	for _, sample := range []string{`portal_catalog_age_seconds 125`, `portal_catalog_items 1`, `portal_invalid_publications 1`, `portal_catalog_initialized 1`, `portal_catalog_state{state="stale"} 1`, `portal_watch_reconnect_duration_seconds 125`, `portal_watch_state{state="reconnecting"} 1`} {
 		if !strings.Contains(w.Body.String(), sample) {
 			t.Errorf("missing %s in %s", sample, w.Body)
@@ -62,12 +62,12 @@ func TestMetricsExposeCatalogAndWatcherStateWithoutResourceLabels(t *testing.T) 
 		}
 	}
 	f.now = start.Add(15 * time.Minute)
-	if w := f.request("GET", "/metrics", nil); !strings.Contains(w.Body.String(), `portal_catalog_state{state="expired"} 1`) {
+	if w := f.operations("/metrics"); !strings.Contains(w.Body.String(), `portal_catalog_state{state="expired"} 1`) {
 		t.Errorf("expired metric missing: %s", w.Body)
 	}
 	// A second server owns its registry; no process-global registration collision.
 	other := newFixture(t)
-	if w := other.request("GET", "/metrics", nil); w.Code != 200 {
+	if w := other.operations("/metrics"); w.Code != 200 {
 		t.Errorf("second server metrics = %d", w.Code)
 	}
 }
@@ -82,7 +82,7 @@ func TestMetricsCountLoginOutcomesAndAuthorizationDenials(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		f.request("GET", "/auth/login", nil)
 	}
-	w := f.request("GET", "/metrics", nil)
+	w := f.operations("/metrics")
 	for _, sample := range []string{`portal_login_total{outcome="success"} 1`, `portal_login_total{outcome="failed"} 1`, `portal_login_total{outcome="throttled"} 1`, `portal_authorization_denials_total{route="admin"} 1`} {
 		if !strings.Contains(w.Body.String(), sample) {
 			t.Errorf("missing %s in %s", sample, w.Body)

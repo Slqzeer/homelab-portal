@@ -40,7 +40,7 @@ spec:
               operator.prometheus.io/name: homelab
       ports:
         - protocol: TCP
-          port: 8080
+          port: 8081
   egress:
     - to:
         - namespaceSelector:

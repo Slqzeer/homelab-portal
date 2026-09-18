@@ -29,8 +29,11 @@ spec:
         - name: portal
           image: registry.example/homelab-portal@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ports:
-            - name: http
+            - name: public
               containerPort: 8080
+              protocol: TCP
+            - name: operations
+              containerPort: 8081
               protocol: TCP
           envFrom:
             - configMapRef:
@@ -39,24 +42,24 @@ spec:
             - name: portal-secrets
               mountPath: /var/run/portal-secrets
               readOnly: true
-          # Kubelet probes the pod port used by the internal Service. Probing
+          # Kubelet probes the operations listener directly. Probing
           # the Service DNS name would couple readiness to Service routing.
           startupProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: operations
             periodSeconds: 2
             failureThreshold: 15
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: operations
             periodSeconds: 10
             timeoutSeconds: 2
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: operations
             periodSeconds: 5
             timeoutSeconds: 2
           securityContext:

@@ -635,6 +635,20 @@ func (h *harness) network(t *testing.T) {
 		out, err := h.kubectl("-n", pod.Namespace, "exec", pod.Name, "--", "curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code}", "--connect-timeout", "3", "--max-time", "5", url)
 		return strings.TrimSpace(string(out)), err
 	}
+	// Resolve the internal operations port from the verified Pod declaration.
+	// Never send probes through the public Ingress or infer a port from its URL.
+	operationsURLs := map[types.UID]string{}
+	var publicURL string
+	for _, pod := range []*corev1.Pod{h.portal, h.stalePod} {
+		publicPort, operationsPort, err := e2e.PortalListenerPorts(pod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		operationsURLs[pod.UID] = "http://" + net.JoinHostPort(pod.Status.PodIP, fmt.Sprint(operationsPort))
+		if pod.UID == h.portal.UID {
+			publicURL = "http://" + net.JoinHostPort(pod.Status.PodIP, fmt.Sprint(publicPort))
+		}
+	}
 	for _, tc := range []struct {
 		name         string
 		pod          *corev1.Pod
@@ -644,11 +658,17 @@ func (h *harness) network(t *testing.T) {
 		{"stale_liveness", h.stalePod, "/healthz", "200"}, {"expired_readiness", h.stalePod, "/readyz", "503"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			status, err := probe(allowed, "http://"+net.JoinHostPort(tc.pod.Status.PodIP, "8080")+tc.path)
+			status, err := probe(allowed, operationsURLs[tc.pod.UID]+tc.path)
 			if err != nil || status != tc.status {
 				t.Fatal("allowed internal HTTP observation failed")
 			}
 		})
+	}
+	for _, path := range []string{"/", "/auth/login", "/auth/callback", "/auth/logout", "/admin", "/app.js"} {
+		status, err := probe(allowed, operationsURLs[h.portal.UID]+path)
+		if err != nil || status != "404" {
+			t.Fatal("operations listener served a public route")
+		}
 	}
 	// Positive control proves denied probe's curl/network work; negative control
 	// uses the same live destination that was reachable from the allowed peer.
@@ -657,9 +677,11 @@ func (h *harness) network(t *testing.T) {
 		t.Fatal("denied probe positive control failed")
 	}
 	for i := 0; i < 3; i++ {
-		status, err := probe(denied, "http://"+net.JoinHostPort(h.portal.Status.PodIP, "8080")+"/healthz")
-		if err == nil || status != "000" {
-			t.Fatal("CNI did not deny unauthorized peer traffic")
+		for _, destination := range []string{publicURL + "/", operationsURLs[h.portal.UID] + "/healthz"} {
+			status, err := probe(denied, destination)
+			if err == nil || status != "000" {
+				t.Fatal("CNI did not deny unauthorized peer traffic")
+			}
 		}
 	}
 	// Same deployed egress selectors, separate non-ready disposable pod. DNS
@@ -678,7 +700,7 @@ func (h *harness) network(t *testing.T) {
 	}
 	// Recheck both destinations after denials: a target outage is not proof of
 	// NetworkPolicy enforcement.
-	status, err = probe(allowed, "http://"+net.JoinHostPort(h.portal.Status.PodIP, "8080")+"/healthz")
+	status, err = probe(allowed, operationsURLs[h.portal.UID]+"/healthz")
 	if err != nil || status != "200" {
 		t.Fatal("portal positive control unavailable after denial checks")
 	}

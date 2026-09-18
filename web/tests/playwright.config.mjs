@@ -9,7 +9,7 @@ export default defineConfig({
   webServer: {
     command: 'go run ./tests/integration/browserfixture',
     cwd: fileURLToPath(new URL('../..', import.meta.url)),
-    url: 'https://127.0.0.1:4173/healthz',
+    url: 'https://127.0.0.1:4173/',
     ignoreHTTPSErrors: true,
     reuseExistingServer: false,
   },

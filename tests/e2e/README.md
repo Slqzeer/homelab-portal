@@ -6,6 +6,14 @@ Use [the acceptance runbook](../../docs/runbooks/acceptance.md) for the complete
 
 The public seam is real HTTP through the supplied Tailscale Ingress, whose Service/EndpointSlice route must bind to the exact digest-checked Pod UID. CI supplies session cookie **values** obtained through real Keycloak Authorization Code + PKCE login for disposable users; the suite neither fabricates sessions nor decodes their contents. Kubernetes checks use explicit kubeconfig/context and inspect public resource metadata/status. Secret metadata reads send one PartialObjectMetadata-only `Accept` value with no unrestricted fallback; the API server's normal plain `application/json` response is bounded and accepted only when it has the exact PartialObjectMetadata top-level shape and identity. This relies on the trusted API server honoring metadata negotiation; the harness never requests, retains, logs, or reports Secret data. `kubectl auth can-i --as` tests actual ServiceAccount authorization, including namespace-specific negative grants. Two additional run-owned NetworkPolicies permit only the opposite directions of the CNI denial tests, eliminating source-egress/backend-ingress false positives; these policies receive the same UID-checked cleanup as the Pods and Ingresses.
 
+Both public Ingresses must bind to the exact verified Pod's named `public` port,
+through the Service port named `public`. Health/readiness/metrics checks use its
+distinct named `operations` Pod port over internal HTTP (8081 by default).
+The public listener must return operational 404s; operations must return 404 for
+pages/auth/assets. Duplicate or conflicting Service, EndpointSlice, or container
+port mappings fail closed. Non-default listener ports are read from verified Pod
+declarations; the harness never infers operations from the public URL.
+
 Offline commands:
 
 ```powershell

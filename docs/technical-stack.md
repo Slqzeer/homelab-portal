@@ -30,7 +30,7 @@ Le premier list Kubernetes a un délai de 10 secondes. Le watch utilise un backo
 
 ## Exposition, observabilité et livraison
 
-L'Ingress Tailscale est l'unique exposition du portail. `/healthz`, `/readyz` et `/metrics` sont servis seulement via le Service interne et ne figurent jamais sur l'Ingress. Prometheus peut les scraper depuis le cluster. Des règles GitOps alertent si le list initial échoue ou le cache expire, et avertissent si le watch se reconnecte plus de deux minutes ou si des annotations restent invalides.
+L'Ingress Tailscale est l'unique exposition du portail et cible uniquement le port nommé `public` du Service (`PORT`, 8080 par défaut). Un second listener indépendant, nommé `operations` (`OPERATIONS_PORT`, 8081 par défaut), sert uniquement `/healthz`, `/readyz` et `/metrics` pour les probes kubelet et Prometheus. Ces routes renvoient 404 sur le listener public ; les pages, routes auth et assets renvoient 404 sur le listener operations. Les deux ports doivent être distincts ; les règles NetworkPolicy associent séparément le proxy au port public et le scraper au port operations. Les deux serveurs partagent le délai de fermeture de 20 secondes. Des règles GitOps alertent si le list initial échoue ou le cache expire, et avertissent si le watch se reconnecte plus de deux minutes ou si des annotations restent invalides.
 
 Les logs JSON stdout utilisent `INFO` en production, un identifiant de requête, l'événement et son résultat. Ils excluent adresse IP, utilisateur, groupe, cookies, tokens, codes OIDC, en-têtes `Authorization` et URL sensibles. Les routes d'authentification sont limitées à 10 tentatives par IP sur cinq minutes; un dépassement retourne `429` avec un blocage visible de dix minutes.
 

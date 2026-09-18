@@ -12,6 +12,7 @@ import (
 
 const (
 	defaultPort                   = 8080
+	defaultOperationsPort         = 8081
 	defaultOIDCClientID           = "homelab-portal"
 	defaultOIDCGroupsClaim        = "groups"
 	defaultPortalIngressNamespace = "portal"
@@ -25,6 +26,7 @@ const (
 // Config contains the portal's validated runtime configuration.
 type Config struct {
 	Port                   int
+	OperationsPort         int
 	PortalBaseURL          string
 	OIDCIssuerURL          string
 	OIDCClientID           string
@@ -63,9 +65,16 @@ func Load(env []string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	port, err := parsePort(values["PORT"])
+	port, err := parsePort(values["PORT"], "PORT", defaultPort)
 	if err != nil {
 		return Config{}, err
+	}
+	operationsPort, err := parsePort(values["OPERATIONS_PORT"], "OPERATIONS_PORT", defaultOperationsPort)
+	if err != nil {
+		return Config{}, err
+	}
+	if port == operationsPort {
+		return Config{}, fmt.Errorf("OPERATIONS_PORT must differ from PORT")
 	}
 
 	clientSecret, err := readSecret(values, "OIDC_CLIENT_SECRET_FILE", true)
@@ -83,6 +92,7 @@ func Load(env []string) (Config, error) {
 
 	return Config{
 		Port:                   port,
+		OperationsPort:         operationsPort,
 		PortalBaseURL:          baseURL,
 		OIDCIssuerURL:          issuerURL,
 		OIDCClientID:           stringValue(values, "OIDC_CLIENT_ID", defaultOIDCClientID),
@@ -118,13 +128,13 @@ func stringValue(values map[string]string, name, fallback string) string {
 	return values[name]
 }
 
-func parsePort(raw string) (int, error) {
+func parsePort(raw, name string, fallback int) (int, error) {
 	if raw == "" {
-		return defaultPort, nil
+		return fallback, nil
 	}
 	port, err := strconv.Atoi(raw)
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("PORT must be an integer between 1 and 65535")
+		return 0, fmt.Errorf("%s must be an integer between 1 and 65535", name)
 	}
 	return port, nil
 }

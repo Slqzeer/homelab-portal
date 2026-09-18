@@ -14,9 +14,9 @@ import (
 )
 
 func routeFixture() (*networkingv1.Ingress, *corev1.Service, *corev1.Pod, *discoveryv1.EndpointSlice) {
-	name, port, protocol, ready := "http", int32(8080), corev1.ProtocolTCP, true
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "verified", UID: "verified-uid", Labels: map[string]string{"app": "portal"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "portal", Image: "registry/portal@sha256:verified", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}}}}, Status: corev1.PodStatus{PodIP: "10.0.0.1"}}
-	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "web", UID: "service-uid"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, ClusterIP: "10.96.0.10", Selector: map[string]string{"app": "portal"}, Ports: []corev1.ServicePort{{Name: name, Port: 80, TargetPort: intstr.FromString("http"), Protocol: protocol}}}}
+	name, port, protocol, ready := "public", int32(8080), corev1.ProtocolTCP, true
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "verified", UID: "verified-uid", Labels: map[string]string{"app": "portal"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "portal", Image: "registry/portal@sha256:verified", Ports: []corev1.ContainerPort{{Name: "public", ContainerPort: 8080}, {Name: "operations", ContainerPort: 8081}}}}}, Status: corev1.PodStatus{PodIP: "10.0.0.1"}}
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "web", UID: "service-uid"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, ClusterIP: "10.96.0.10", Selector: map[string]string{"app": "portal"}, Ports: []corev1.ServicePort{{Name: name, Port: 80, TargetPort: intstr.FromString("public"), Protocol: protocol}}}}
 	slice := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "web-abc", Labels: map[string]string{discoveryv1.LabelServiceName: "web"}, OwnerReferences: []metav1.OwnerReference{{APIVersion: "v1", Kind: "Service", Name: "web", UID: svc.UID}}}, AddressType: discoveryv1.AddressTypeIPv4, Ports: []discoveryv1.EndpointPort{{Name: &name, Port: &port, Protocol: &protocol}}, Endpoints: []discoveryv1.Endpoint{{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}, TargetRef: &corev1.ObjectReference{APIVersion: "v1", Kind: "Pod", Namespace: "portal", Name: pod.Name, UID: pod.UID}}}}
 	ing := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Name: "published"}, Spec: networkingv1.IngressSpec{DefaultBackend: &networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: "web", Port: networkingv1.ServiceBackendPort{Number: 80}}}}}
 	return ing, svc, pod, slice
@@ -51,6 +51,23 @@ func TestIngressRouteMustResolveOnlyToVerifiedPod(t *testing.T) {
 		{"in-place image change", func(_ *corev1.Service, p *corev1.Pod, _ *discoveryv1.EndpointSlice) {
 			p.Spec.Containers[0].Image = "registry/other:latest"
 		}, false},
+		{"operations service port", func(s *corev1.Service, _ *corev1.Pod, slice *discoveryv1.EndpointSlice) {
+			s.Spec.Ports[0].Name = "operations"
+			name := "operations"
+			slice.Ports[0].Name = &name
+		}, false},
+		{"duplicate slice port", func(_ *corev1.Service, _ *corev1.Pod, s *discoveryv1.EndpointSlice) {
+			s.Ports = append(s.Ports, s.Ports[0])
+		}, false},
+		{"ambiguous container port", func(_ *corev1.Service, p *corev1.Pod, _ *discoveryv1.EndpointSlice) {
+			p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: "sidecar", Ports: []corev1.ContainerPort{{Name: "public", ContainerPort: 8080}}})
+		}, false},
+		{"missing operations declaration", func(_ *corev1.Service, p *corev1.Pod, _ *discoveryv1.EndpointSlice) {
+			p.Spec.Containers[0].Ports = p.Spec.Containers[0].Ports[:1]
+		}, false},
+		{"colliding listeners", func(_ *corev1.Service, p *corev1.Pod, _ *discoveryv1.EndpointSlice) {
+			p.Spec.Containers[0].Ports[1].ContainerPort = 8080
+		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ing, svc, pod, slice := routeFixture()
@@ -62,5 +79,19 @@ func TestIngressRouteMustResolveOnlyToVerifiedPod(t *testing.T) {
 				t.Fatal("route accepted an unverified or ambiguous target")
 			}
 		})
+	}
+}
+
+func TestIngressBindsConfiguredPublicPortAndRejectsOperations(t *testing.T) {
+	for _, target := range []int32{9000, 9001} {
+		ing, svc, pod, slice := routeFixture()
+		pod.Spec.Containers[0].Ports[0].ContainerPort = 9000
+		pod.Spec.Containers[0].Ports[1].ContainerPort = 9001
+		svc.Spec.Ports[0].TargetPort = intstr.FromInt32(target)
+		slice.Ports[0].Port = &target
+		err := e2e.VerifyIngressPodRoute(context.Background(), fake.NewClientset(svc, pod, slice), ing, pod)
+		if (err == nil) != (target == 9000) {
+			t.Fatalf("configured public/operations binding: port=%d accepted=%v", target, err == nil)
+		}
 	}
 }

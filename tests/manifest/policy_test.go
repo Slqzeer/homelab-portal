@@ -67,7 +67,7 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 	config := decode[corev1.ConfigMap](t, objectOf(t, objects, "ConfigMap", "homelab-portal"))
 	// This allowlist prevents adding credential-valued environment variables.
 	require.Equal(t, map[string]string{
-		"PORT": "8080", "PORTAL_BASE_URL": "https://portal.example.ts.net",
+		"PORT": "8080", "OPERATIONS_PORT": "8081", "PORTAL_BASE_URL": "https://portal.example.ts.net",
 		"OIDC_ISSUER_URL": "https://keycloak.example.ts.net/realms/homelab",
 		"OIDC_CLIENT_ID":  "homelab-portal", "OIDC_GROUPS_CLAIM": "groups",
 		"PORTAL_INGRESS_NAMESPACE": "portal", "PORTAL_INGRESS_NAME": "homelab-portal",
@@ -107,12 +107,14 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 	require.Empty(t, service.Spec.LoadBalancerIP)
 	require.True(t, service.Spec.PublishNotReadyAddresses, "failure metrics and last valid links must remain reachable when readiness fails")
 	require.Equal(t, deployment.Spec.Template.Labels, service.Spec.Selector)
-	require.Len(t, service.Spec.Ports, 1)
-	port := service.Spec.Ports[0]
-	require.Zero(t, port.NodePort)
-	require.EqualValues(t, 8080, port.Port)
-	require.Equal(t, intstr.FromString("http"), port.TargetPort)
-	require.Equal(t, []corev1.ContainerPort{{Name: "http", ContainerPort: 8080, Protocol: corev1.ProtocolTCP}}, container.Ports)
+	require.Equal(t, []corev1.ServicePort{
+		{Name: "public", Port: 8080, TargetPort: intstr.FromString("public"), Protocol: corev1.ProtocolTCP},
+		{Name: "operations", Port: 8081, TargetPort: intstr.FromString("operations"), Protocol: corev1.ProtocolTCP},
+	}, service.Spec.Ports)
+	require.Equal(t, []corev1.ContainerPort{
+		{Name: "public", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
+		{Name: "operations", ContainerPort: 8081, Protocol: corev1.ProtocolTCP},
+	}, container.Ports)
 	for _, check := range []struct {
 		probe *corev1.Probe
 		path  string
@@ -122,7 +124,7 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 		require.NotNil(t, check.probe)
 		require.NotNil(t, check.probe.HTTPGet)
 		require.Equal(t, check.path, check.probe.HTTPGet.Path)
-		require.Equal(t, port.TargetPort, check.probe.HTTPGet.Port)
+		require.Equal(t, intstr.FromString("operations"), check.probe.HTTPGet.Port)
 		require.Empty(t, check.probe.HTTPGet.Host, "kubelet probes its own pod, avoiding a Service readiness cycle")
 	}
 	monitor := objectOf(t, objects, "ServiceMonitor", "homelab-portal")
@@ -136,7 +138,7 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, endpoints, 1)
 	endpoint := endpoints[0].(map[string]interface{})
-	require.Equal(t, port.Name, endpoint["port"])
+	require.Equal(t, "operations", endpoint["port"])
 	require.Equal(t, "/metrics", endpoint["path"])
 }
 
@@ -248,8 +250,8 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 		})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
 		{From: []networkingv1.NetworkPolicyPeer{peer("monitoring", map[string]string{
 			"app.kubernetes.io/name": "prometheus", "operator.prometheus.io/name": "homelab",
-		})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
-	}, allow.Spec.Ingress, "namespace and pod restrictions must be in the same peer (AND), with no wildcard ingress")
+		})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8081)}},
+	}, allow.Spec.Ingress, "each peer must have only its own port: proxy/public and scraper/operations")
 	require.ElementsMatch(t, []networkingv1.NetworkPolicyEgressRule{
 		{To: []networkingv1.NetworkPolicyPeer{peer("kube-system", map[string]string{"k8s-app": "kube-dns"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolUDP, 53), port(corev1.ProtocolTCP, 53)}},
 		{To: []networkingv1.NetworkPolicyPeer{
