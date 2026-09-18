@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 test('developer can preview and filter realistic catalogue states with live reload enabled', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
   const response = await page.goto('/');
 
   expect(await response.text()).toContain('/@vite/client');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('script[src="/theme.js"]')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Switch to light theme' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Service catalogue' })).toBeVisible();
   await expect(page.getByText('Catalogue is stale.', { exact: false })).toBeVisible();
@@ -43,9 +45,11 @@ test('developer can preview and filter realistic catalogue states with live relo
 });
 
 test('developer can preview populated admin diagnostics', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/admin');
 
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('script[src="/theme.js"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await expect(page.getByText('invalid access annotation')).toBeVisible();

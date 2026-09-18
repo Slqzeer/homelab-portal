@@ -8,10 +8,10 @@ const longCategory = 'C'.repeat(40);
 
 const visibleArticles = (page) => page.locator('article[data-catalog-item]:visible');
 
-test('production-rendered portal declares the dark theme contract on the document root', async ({ page }) => {
+test('production-rendered portal declares a resolved theme contract on the document root', async ({ page }) => {
   await page.goto(baseURL);
 
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /light|dark/);
 });
 
 test('production-rendered portal resolves a first visit from the operating-system theme', async ({ page }) => {
@@ -21,11 +21,61 @@ test('production-rendered portal resolves a first visit from the operating-syste
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
+test('production-rendered portal follows operating-system theme changes without a saved preference', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(baseURL);
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('production-rendered portal preserves a valid saved theme when the operating-system theme changes', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('portal.theme', 'light'));
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto(baseURL);
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('production-rendered portal falls back to the operating-system theme when storage is malformed or unavailable', async ({ browser }) => {
+  const malformedContext = await browser.newContext({ ignoreHTTPSErrors: true });
+  const malformed = await malformedContext.newPage();
+  await malformed.addInitScript(() => localStorage.setItem('portal.theme', 'system'));
+  await malformed.emulateMedia({ colorScheme: 'dark' });
+  await malformed.goto(baseURL);
+  await expect(malformed.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await malformedContext.close();
+
+  const unavailableContext = await browser.newContext({ ignoreHTTPSErrors: true });
+  const unavailable = await unavailableContext.newPage();
+  const pageErrors = [];
+  unavailable.on('pageerror', (error) => pageErrors.push(error));
+  await unavailable.addInitScript(() => {
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === 'portal.theme') throw new DOMException('Blocked', 'SecurityError');
+      return getItem.call(this, key);
+    };
+  });
+  await unavailable.emulateMedia({ colorScheme: 'light' });
+  await unavailable.goto(baseURL);
+
+  await expect(unavailable.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(pageErrors).toEqual([]);
+  await unavailableContext.close();
+});
+
 test('production-rendered portal switches and persists an explicit theme choice', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto(baseURL);
 
-  const toggle = page.getByRole('button', { name: 'Switch to dark theme' });
+  const toggle = page.locator('[data-theme-toggle]');
+  await expect(toggle).toHaveAccessibleName('Switch to dark theme');
   await toggle.click();
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -82,7 +132,7 @@ test('production-rendered anonymous cards filter locally and never request catal
   for (const requestURL of requests) {
     const requested = new URL(requestURL);
     expect(requested.origin).toBe(baseURL);
-    expect(requested.pathname).toMatch(/^\/$|^\/app\.js$|^\/_astro\/.+\.css$|^\/icons\/.+\.svg$/);
+    expect(requested.pathname).toMatch(/^\/$|^\/app\.js$|^\/theme\.js$|^\/_astro\/.+\.css$|^\/icons\/.+\.svg$/);
   }
   const initializationRequests = [...requests];
 
@@ -308,6 +358,7 @@ test('production-rendered admin identity receives its authorized card set', asyn
 
 test('compiled production layout wraps maximum valid catalogue text at a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(baseURL);
 
   const accessibility = await new AxeBuilder({ page })

@@ -13,4 +13,10 @@
   }
 
   root.dataset.theme = preference ?? (media.matches ? 'dark' : 'light');
+
+  if (preference === null) {
+    media.addEventListener('change', (event) => {
+      root.dataset.theme = event.matches ? 'dark' : 'light';
+    });
+  }
 })();

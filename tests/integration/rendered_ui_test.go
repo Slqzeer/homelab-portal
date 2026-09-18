@@ -48,6 +48,7 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 		`data-catalog-item`, `data-catalog-name`, `data-catalog-description`, `data-catalog-category`,
 		`href="/auth/login"`, `src="/icons/grafana.svg"`,
 	)
+	assertThemeInitializer(t, anonymous)
 	assertContainsNone(t, anonymous, "Secret Admin", "Private operations", "secret-admin.tail.example", ">Sign out<", `href="/admin"`)
 
 	authenticatedCookie := sessionCookie(t, sessions, now)
@@ -62,6 +63,7 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 
 	adminPage := serve(t, handler, http.MethodGet, "/admin", adminCookie)
 	assertContainsAll(t, adminPage, `<html lang="en" data-theme="dark">`)
+	assertThemeInitializer(t, adminPage)
 
 	for _, match := range regexp.MustCompile(`(?:src|href)="([^"]+)"`).FindAllStringSubmatch(anonymous, -1) {
 		value := match[1]
@@ -188,6 +190,20 @@ func assertContainsNone(t *testing.T, value string, unexpected ...string) {
 			t.Errorf("unexpected %q in %s", item, value)
 		}
 	}
+}
+
+func assertThemeInitializer(t *testing.T, html string) {
+	t.Helper()
+	script := `<script src="/theme.js"></script>`
+	if count := strings.Count(html, script); count != 1 {
+		t.Fatalf("theme initializer count = %d, want 1", count)
+	}
+	scriptAt := strings.Index(html, script)
+	stylesheetAt := strings.Index(html, `<link rel="stylesheet"`)
+	if scriptAt < 0 || (stylesheetAt >= 0 && scriptAt > stylesheetAt) {
+		t.Fatalf("theme initializer must precede styles: %s", html)
+	}
+	assertContainsNone(t, html, `<script>`, "localStorage", "matchMedia")
 }
 
 func assertHTMLOrder(t *testing.T, html string, markers ...string) {
