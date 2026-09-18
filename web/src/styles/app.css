@@ -211,6 +211,24 @@
     color: #f8fafc;
   }
 
+  .search-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .clear-search {
+    min-height: 2.75rem;
+    flex: 0 0 auto;
+    border: 1px solid #475569;
+    border-radius: 0.625rem;
+    padding: 0.55rem 1rem;
+    background: #1e293b;
+    color: #e2e8f0;
+    cursor: pointer;
+    font-weight: 650;
+  }
+
   .search-control input::placeholder {
     color: #94a3b8;
   }

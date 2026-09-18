@@ -43,6 +43,9 @@ test('production-rendered anonymous cards filter locally and never request catal
 
   const monitoring = page.getByRole('button', { name: 'Monitoring' });
   const all = page.getByRole('button', { name: 'All' });
+  const clearSearch = page.getByRole('button', { name: 'Clear search' });
+
+  await expect(clearSearch).toBeHidden();
 
   await search.fill('gRaF');
   await expect(visibleArticles(page)).toHaveCount(1);
@@ -61,10 +64,14 @@ test('production-rendered anonymous cards filter locally and never request catal
   await expect(visibleArticles(page)).toHaveCount(1);
   await expect(page.getByRole('article').filter({ hasText: 'Prometheus' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('1 catalog item');
+  await expect(clearSearch).toBeVisible();
 
-  await search.fill('');
+  await clearSearch.click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
   await expect(visibleArticles(page)).toHaveCount(2);
   await expect(page.getByRole('status')).toHaveText('2 catalog items');
+  await expect(clearSearch).toBeHidden();
 
   await all.click();
   await expect(visibleArticles(page)).toHaveCount(4);

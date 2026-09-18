@@ -21,6 +21,16 @@ test('developer can preview and filter realistic catalogue states with live relo
   await expect(page.locator('[data-catalog-status]')).toHaveText('2 catalog items');
   await expect(page.getByRole('link', { name: 'Open Grafana' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Keycloak' })).toBeHidden();
+
+  const clearSearch = page.getByRole('button', { name: 'Clear search' });
+  await expect(clearSearch).toBeHidden();
+  await search.fill('grafana');
+  await expect(clearSearch).toBeVisible();
+  await clearSearch.click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(page.locator('[data-catalog-status]')).toHaveText('2 catalog items');
+  await expect(clearSearch).toBeHidden();
 });
 
 test('developer can preview populated admin diagnostics', async ({ page }) => {

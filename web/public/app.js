@@ -2,6 +2,7 @@ const search = document.querySelector('[data-catalog-search]');
 const cards = [...document.querySelectorAll('article[data-catalog-item]')];
 const status = document.querySelector('[data-catalog-status]');
 const categoryButtons = [...document.querySelectorAll('button[data-category-filter]')];
+const clearSearch = document.querySelector('[data-catalog-clear-search]');
 
 if (search && status) {
   let selectedCategory = '';
@@ -25,9 +26,18 @@ if (search && status) {
     }
 
     status.textContent = `${visible} catalog ${visible === 1 ? 'item' : 'items'}`;
+    if (clearSearch) {
+      clearSearch.hidden = search.value.length === 0;
+    }
   };
 
   search.addEventListener('input', update);
+
+  clearSearch?.addEventListener('click', () => {
+    search.value = '';
+    update();
+    search.focus();
+  });
 
   for (const button of categoryButtons) {
     button.addEventListener('click', () => {

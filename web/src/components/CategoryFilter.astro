@@ -10,7 +10,10 @@ const { categories }: Props = Astro.props;
   <h3 id="catalog-filters-heading" class="visually-hidden">Find a catalog item</h3>
   <div class="search-control">
     <label for="catalog-search">Search catalog</label>
-    <input id="catalog-search" type="search" data-catalog-search autocomplete="off" placeholder="Name, description, or category" />
+    <div class="search-input-row">
+      <input id="catalog-search" type="search" data-catalog-search autocomplete="off" placeholder="Name, description, or category" />
+      <button class="clear-search" type="button" data-catalog-clear-search hidden>Clear search</button>
+    </div>
   </div>
   <div class="category-filters" role="group" aria-label="Filter by category">
     <button class="filter-button" type="button" data-category-filter="" aria-pressed="true" aria-controls="catalog-items">All</button>

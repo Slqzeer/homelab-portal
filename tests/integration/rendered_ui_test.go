@@ -41,7 +41,7 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 	anonymous := renderHome(t, handler, nil)
 	assertContainsAll(t, anonymous,
 		`<label for="catalog-search">Search catalog</label>`,
-		`data-catalog-search`, `data-category-filter="" aria-pressed="true"`,
+		`data-catalog-search`, `data-catalog-clear-search hidden>Clear search</button>`, `data-category-filter="" aria-pressed="true"`,
 		`data-catalog-status role="status" aria-live="polite"`,
 		`data-catalog-item`, `data-catalog-name`, `data-catalog-description`, `data-catalog-category`,
 		`href="/auth/login"`, `src="/icons/grafana.svg"`,
