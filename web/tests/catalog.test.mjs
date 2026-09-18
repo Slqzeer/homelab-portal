@@ -65,6 +65,7 @@ test('production-rendered anonymous cards filter locally and never request catal
   await expect(monitoring).toBeFocused();
   await expect(monitoring).toHaveAttribute('aria-pressed', 'true');
   await expect(all).toHaveAttribute('aria-pressed', 'false');
+  await expect(page).not.toHaveURL(/\?.+/);
   await expect(visibleArticles(page)).toHaveCount(1);
   await expect(page.getByRole('article').filter({ hasText: 'Prometheus' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('1 catalog item');
@@ -137,6 +138,48 @@ test('production-rendered catalogue uses a compact desktop rail and flexible mul
   expect(gridBox.width).toBeCloseTo(mainBox.width, 1);
   expect(secondCard.y).toBeCloseTo(firstCard.y, 1);
   expect(secondCard.x).toBeGreaterThan(firstCard.x);
+});
+
+test('production-rendered wide catalogue keeps opaque controls sticky without hiding focused cards', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 500 });
+  await page.goto(baseURL);
+
+  const controls = page.locator('.catalog-controls');
+  const cardLink = page.getByRole('link', { name: 'Open Prometheus' });
+  await page.evaluate(() => window.scrollTo(0, 260));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+  const controlsBox = await controls.boundingBox();
+  expect(controlsBox.y).toBeGreaterThanOrEqual(0);
+  expect(controlsBox.y).toBeLessThanOrEqual(2);
+  expect(await controls.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+
+  await cardLink.focus();
+  const [focusedBox, stickyBox] = await Promise.all([cardLink.boundingBox(), controls.boundingBox()]);
+  expect(focusedBox.y).toBeGreaterThanOrEqual(stickyBox.y + stickyBox.height);
+});
+
+test('production-rendered narrow catalogue keeps controls in normal flow and chips readable', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto(baseURL);
+
+  const controls = page.locator('.catalog-controls');
+  const search = page.getByRole('searchbox', { name: 'Search catalog' });
+  const buttons = page.locator('button[data-category-filter]');
+  const initialY = (await controls.boundingBox()).y;
+  await expect(page.getByText('Search catalog', { exact: true })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 260));
+  const scrolledY = (await controls.boundingBox()).y;
+
+  expect(scrolledY).toBeLessThan(initialY - 100);
+  for (const button of await buttons.all()) {
+    const box = await button.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await search.focus();
+  await expect(search).toBeFocused();
 });
 
 test('production-rendered catalogue stacks the information rail before one-column controls and cards at 320px', async ({ page }) => {

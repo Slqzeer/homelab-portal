@@ -299,6 +299,10 @@
     inset: 0;
   }
 
+  .catalog-card h4 a {
+    scroll-margin-top: 10rem;
+  }
+
   .catalog-card {
     position: relative;
   }
@@ -355,6 +359,16 @@
     padding: 0.75rem;
     text-align: left;
     vertical-align: top;
+  }
+
+  @media (min-width: 56rem) {
+    .catalog-controls {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding-block: 0.75rem 1rem;
+      background: #0f172a;
+    }
   }
 
   @media (max-width: 55.999rem) {
