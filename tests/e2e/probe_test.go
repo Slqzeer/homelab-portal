@@ -41,3 +41,27 @@ func TestProbeCannotBecomeAServiceEndpoint(t *testing.T) {
 		})
 	}
 }
+
+func TestProbeServiceInventoryIsNamespaceScoped(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "portal", Labels: map[string]string{"app": "portal"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe"}}}}
+	unrelated := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "other", Name: "matching"}, Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "portal"}, Ports: []corev1.ServicePort{{Port: 80, TargetPort: intstr.FromInt32(8080)}}}}
+	client := fake.NewClientset(unrelated)
+	if err := e2e.EnsureProbeNotRoutable(context.Background(), client, pod); err != nil {
+		t.Fatal("Service in another namespace blocked the probe")
+	}
+	actions := client.Actions()
+	if len(actions) != 1 || actions[0].GetVerb() != "list" || actions[0].GetResource().Resource != "services" || actions[0].GetNamespace() != "portal" {
+		t.Fatal("probe inventory did not use a namespace-scoped Service list")
+	}
+}
+
+func TestProbeServiceInventoryRejectsMissingNamespaceBeforeList(t *testing.T) {
+	client := fake.NewClientset()
+	err := e2e.EnsureProbeNotRoutable(context.Background(), client, &corev1.Pod{})
+	if err == nil {
+		t.Fatal("namespace-less probe inventory was accepted")
+	}
+	if len(client.Actions()) != 0 {
+		t.Fatal("namespace-less probe triggered a cluster-wide Service list")
+	}
+}

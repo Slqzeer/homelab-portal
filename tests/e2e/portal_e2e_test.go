@@ -578,7 +578,7 @@ func (h *harness) probe(t *testing.T, role string) *corev1.Pod {
 		labels[runLabel], labels[isolatedLabel] = h.c["ACCEPT_RUN_ID"], "true"
 	}
 	no, yes, uid := false, true, int64(65532)
-	meta := metav1.ObjectMeta{Name: h.c["ACCEPT_RUN_ID"] + "-" + suffix, Labels: labels}
+	meta := metav1.ObjectMeta{Name: h.c["ACCEPT_RUN_ID"] + "-" + suffix, Namespace: ns, Labels: labels}
 	if role == "egress" {
 		// An existing controller owner prevents a ReplicaSet from adopting the
 		// probe when its selectors match the copied portal labels.

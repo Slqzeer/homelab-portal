@@ -15,6 +15,9 @@ import (
 // publish unready addresses. Numeric ports resolve without containerPort
 // declarations. Only unresolved named ports are safe for a selected probe.
 func EnsureProbeNotRoutable(ctx context.Context, k kubernetes.Interface, pod *corev1.Pod) error {
+	if pod == nil || pod.Namespace == "" {
+		return errors.New("probe namespace absent")
+	}
 	services, err := k.CoreV1().Services(pod.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return errors.New("probe Service-selection inventory unavailable")
