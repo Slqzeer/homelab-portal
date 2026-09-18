@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -80,7 +79,12 @@ func TestPortalAcceptance(t *testing.T) {
 	r.RunID, r.Image, r.Revision = c["ACCEPT_RUN_ID"], c["ACCEPT_IMAGE"], c["ACCEPT_ARGO_REVISION"]
 	h := newHarness(t, c)
 	check := func(name string, f func(*testing.T)) bool {
-		ok := t.Run(name, f)
+		ok := t.Run(name, func(t *testing.T) {
+			if name != "isolated_prerequisites" {
+				h.routes(t)
+			}
+			f(t)
+		})
 		r.Results = append(r.Results, result{name, ok})
 		return ok
 	}
@@ -167,7 +171,8 @@ type harness struct {
 	c                e2e.Config
 	k                kubernetes.Interface
 	d                dynamic.Interface
-	m                metadata.Interface
+	metadataHTTP     *http.Client
+	apiOrigin        string
 	http             *http.Client
 	ctx              context.Context
 	owner            *testing.T
@@ -205,13 +210,13 @@ func newHarness(t *testing.T, c e2e.Config) *harness {
 	if err != nil {
 		t.Fatal("Kubernetes CRD client unavailable")
 	}
-	m, err := metadata.NewForConfig(cfg)
+	m, err := rest.HTTPClientFor(cfg)
 	if err != nil {
 		t.Fatal("Kubernetes metadata client unavailable")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	t.Cleanup(cancel)
-	return &harness{c: c, k: k, d: d, m: m, ctx: ctx, owner: t, http: &http.Client{Timeout: 15 * time.Second,
+	return &harness{c: c, k: k, d: d, metadataHTTP: m, apiOrigin: cfg.Host, ctx: ctx, owner: t, http: &http.Client{Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
@@ -258,6 +263,9 @@ func (h *harness) preflight(t *testing.T) {
 		if err != nil || !h.owned(ing) || ingressURL(ing) != h.c[pair.origin] {
 			t.Fatal("portal endpoint does not match isolated Tailscale Ingress status")
 		}
+		if err := e2e.VerifyIngressPodRoute(h.ctx, h.k, ing, pod); err != nil {
+			t.Fatal(err)
+		}
 	}
 	svc, err := h.k.CoreV1().Services(h.c["ACCEPT_FIXTURE_NAMESPACE"]).Get(h.ctx, h.c["ACCEPT_FIXTURE_SERVICE"], metav1.GetOptions{})
 	if err != nil || !h.owned(svc) || svc.Spec.Type != corev1.ServiceTypeClusterIP || len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Port != 80 {
@@ -278,6 +286,24 @@ func (h *harness) preflight(t *testing.T) {
 	}
 	if _, err := exec.LookPath("kubectl"); err != nil {
 		t.Fatal("kubectl prerequisite absent")
+	}
+}
+
+func (h *harness) routes(t *testing.T) {
+	t.Helper()
+	for _, pair := range []struct {
+		pod             *corev1.Pod
+		ingress, origin string
+	}{
+		{h.portal, "ACCEPT_PORTAL_INGRESS", "ACCEPT_PORTAL_URL"}, {h.stalePod, "ACCEPT_STALE_INGRESS", "ACCEPT_STALE_URL"},
+	} {
+		ing, err := h.k.NetworkingV1().Ingresses(pair.pod.Namespace).Get(h.ctx, h.c[pair.ingress], metav1.GetOptions{})
+		if err != nil || !h.owned(ing) || ingressURL(ing) != h.c[pair.origin] {
+			t.Fatal("tested Ingress identity or origin changed")
+		}
+		if err := e2e.VerifyIngressPodRoute(h.ctx, h.k, ing, pair.pod); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -362,7 +388,7 @@ func (h *harness) cleanup(resourceName, ns, name string, uid types.UID) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		gvr := schema.GroupVersionResource{Version: "v1", Resource: resourceName}
-		if resourceName == "ingresses" {
+		if resourceName == "ingresses" || resourceName == "networkpolicies" {
 			gvr.Group = "networking.k8s.io"
 		}
 		api := h.d.Resource(gvr).Namespace(ns)
@@ -429,7 +455,7 @@ func (h *harness) vso(t *testing.T) {
 		t.Fatal("VSO destination absent")
 	}
 	// PartialObjectMetadata avoids retrieving Secret data at all.
-	secret, err := h.m.Resource(schema.GroupVersionResource{Version: "v1", Resource: "secrets"}).Namespace(obj.GetNamespace()).Get(h.ctx, name, metav1.GetOptions{})
+	secret, err := e2e.ReadSecretMetadata(h.ctx, h.metadataHTTP, h.apiOrigin, obj.GetNamespace(), name)
 	if err != nil {
 		t.Fatal("VSO destination Secret metadata unavailable")
 	}
@@ -535,6 +561,9 @@ func (h *harness) rbac(t *testing.T) {
 func (h *harness) probe(t *testing.T, role string) *corev1.Pod {
 	ns, suffix := h.c["ACCEPT_FIXTURE_NAMESPACE"], "denied"
 	labels := h.labels()
+	if role == "denied" {
+		labels[e2e.RoleLabel] = "denied"
+	}
 	if role == "allowed" {
 		ns, suffix = h.c["ACCEPT_PROBE_NAMESPACE"], "allowed"
 		labels["app.kubernetes.io/name"] = "prometheus"
@@ -555,22 +584,33 @@ func (h *harness) probe(t *testing.T, role string) *corev1.Pod {
 		// probe when its selectors match the copied portal labels.
 		meta.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "Pod", Name: h.portal.Name, UID: h.portal.UID, Controller: &yes, BlockOwnerDeletion: &no}}
 	}
-	pod, err := h.k.CoreV1().Pods(ns).Create(h.ctx, &corev1.Pod{ObjectMeta: meta, Spec: corev1.PodSpec{
+	pod := &corev1.Pod{ObjectMeta: meta, Spec: corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever, AutomountServiceAccountToken: &no,
 		SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 		Containers: []corev1.Container{{Name: "probe", Image: h.c["ACCEPT_PROBE_IMAGE"], Command: []string{"sleep", "900"},
-			// Never join a portal Service's ready endpoints when copying labels.
+			// Defense in depth only; Service safety is checked independently below.
 			ReadinessProbe:  &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(1)}}, PeriodSeconds: 2},
 			VolumeMounts:    []corev1.VolumeMount{{Name: "cluster-ca", MountPath: "/var/run/acceptance-ca", ReadOnly: true}},
 			SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: &yes, AllowPrivilegeEscalation: &no, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 			Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("5m"), corev1.ResourceMemory: resource.MustParse("8Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("32Mi")}},
 		}},
 		Volumes: []corev1.Volume{{Name: "cluster-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "kube-root-ca.crt"}}}}},
-	}}, metav1.CreateOptions{})
+	}}
+	if role == "egress" {
+		if err := e2e.EnsureProbeNotRoutable(h.ctx, h.k, pod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pod, err := h.k.CoreV1().Pods(ns).Create(h.ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal("disposable probe create failed")
 	}
 	h.cleanup("pods", pod.Namespace, pod.Name, pod.UID)
+	if role == "egress" {
+		if err := e2e.EnsureProbeNotRoutable(h.ctx, h.k, pod); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if !h.eventually(time.Minute, func() bool {
 		current, err := h.k.CoreV1().Pods(ns).Get(h.ctx, pod.Name, metav1.GetOptions{})
 		return err == nil && current.UID == pod.UID && current.Status.Phase == corev1.PodRunning
@@ -582,6 +622,15 @@ func (h *harness) probe(t *testing.T, role string) *corev1.Pod {
 
 func (h *harness) network(t *testing.T) {
 	allowed, denied := h.probe(t, "allowed"), h.probe(t, "denied")
+	egress := h.probe(t, "egress")
+	backend, backendPort, err := e2e.ResolveServiceBackend(h.ctx, h.k, h.c["ACCEPT_FIXTURE_NAMESPACE"], networkingv1.IngressServiceBackend{Name: h.c["ACCEPT_FIXTURE_SERVICE"], Port: networkingv1.ServiceBackendPort{Number: 80}})
+	if err != nil || !h.owned(backend) {
+		t.Fatal("direction-control backend is not a unique run-owned Pod")
+	}
+	if err := e2e.CreateDirectionControls(h.ctx, h.k, h.c["ACCEPT_RUN_ID"], denied, egress, backend, func(p *networkingv1.NetworkPolicy) { h.cleanup("networkpolicies", p.Namespace, p.Name, p.UID) }); err != nil {
+		t.Fatal(err)
+	}
+	backendURL := "http://" + net.JoinHostPort(backend.Status.PodIP, fmt.Sprint(backendPort)) + "/"
 	probe := func(pod *corev1.Pod, url string) (string, error) {
 		out, err := h.kubectl("-n", pod.Namespace, "exec", pod.Name, "--", "curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code}", "--connect-timeout", "3", "--max-time", "5", url)
 		return strings.TrimSpace(string(out)), err
@@ -603,11 +652,7 @@ func (h *harness) network(t *testing.T) {
 	}
 	// Positive control proves denied probe's curl/network work; negative control
 	// uses the same live destination that was reachable from the allowed peer.
-	svc, err := h.k.CoreV1().Services(h.c["ACCEPT_FIXTURE_NAMESPACE"]).Get(h.ctx, h.c["ACCEPT_FIXTURE_SERVICE"], metav1.GetOptions{})
-	if err != nil || net.ParseIP(svc.Spec.ClusterIP) == nil {
-		t.Fatal("probe positive control Service unavailable")
-	}
-	status, err := probe(denied, "http://"+net.JoinHostPort(svc.Spec.ClusterIP, "80")+"/")
+	status, err := probe(denied, backendURL)
 	if err != nil || status != "200" {
 		t.Fatal("denied probe positive control failed")
 	}
@@ -619,7 +664,6 @@ func (h *harness) network(t *testing.T) {
 	}
 	// Same deployed egress selectors, separate non-ready disposable pod. DNS
 	// and API traffic must succeed; fixture backend traffic must be dropped.
-	egress := h.probe(t, "egress")
 	out, err := h.kubectl("-n", egress.Namespace, "exec", egress.Name, "--", "curl", "--silent", "--cacert", "/var/run/acceptance-ca/ca.crt",
 		"--output", "/dev/null", "--write-out", "%{http_code}", "--connect-timeout", "3", "--max-time", "5", "https://kubernetes.default.svc/version")
 	apiStatus := strings.TrimSpace(string(out))
@@ -627,7 +671,7 @@ func (h *harness) network(t *testing.T) {
 		t.Fatal("CNI allowed DNS/API egress positive control failed")
 	}
 	for i := 0; i < 3; i++ {
-		status, err := probe(egress, "http://"+net.JoinHostPort(svc.Spec.ClusterIP, "80")+"/")
+		status, err := probe(egress, backendURL)
 		if err == nil || status != "000" {
 			t.Fatal("CNI did not deny unauthorized portal egress")
 		}
@@ -638,7 +682,7 @@ func (h *harness) network(t *testing.T) {
 	if err != nil || status != "200" {
 		t.Fatal("portal positive control unavailable after denial checks")
 	}
-	status, err = probe(denied, "http://"+net.JoinHostPort(svc.Spec.ClusterIP, "80")+"/")
+	status, err = probe(denied, backendURL)
 	if err != nil || status != "200" {
 		t.Fatal("backend positive control unavailable after denial checks")
 	}
