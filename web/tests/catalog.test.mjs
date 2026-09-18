@@ -160,6 +160,10 @@ test('production-rendered catalogue stacks the information rail before one-colum
 test('production-rendered admin identity receives its authorized card set', async ({ page }) => {
   await page.goto(`${baseURL}/__test/admin`);
 
+  await expect(page.locator('aside.catalog-information-rail')).toBeVisible();
+  await expect(page.locator('.catalog-main')).toBeVisible();
+  await expect(page.locator('aside.catalog-information-rail').getByRole('link')).toHaveCount(0);
+  await expect(page.locator('header.site-header').getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(visibleArticles(page)).toHaveCount(5);
