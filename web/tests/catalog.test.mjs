@@ -80,6 +80,73 @@ test('production-rendered anonymous cards filter locally and never request catal
   expect(requests).toEqual(initializationRequests);
 });
 
+test('production-rendered catalogue uses a compact desktop rail and flexible multi-column results', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(baseURL);
+
+  const rail = page.locator('aside.catalog-information-rail');
+  const main = page.locator('.catalog-main');
+  const grid = page.locator('[data-catalog-grid]');
+  const [railBox, mainBox, gridBox, firstCard, secondCard] = await Promise.all([
+    rail.boundingBox(), main.boundingBox(), grid.boundingBox(),
+    page.locator('article[data-catalog-item]').nth(0).boundingBox(),
+    page.locator('article[data-catalog-item]').nth(1).boundingBox(),
+  ]);
+
+  expect(railBox.x).toBeLessThan(mainBox.x);
+  expect(railBox.y).toBeCloseTo(mainBox.y, 1);
+  expect(mainBox.width).toBeGreaterThan(railBox.width * 1.5);
+  expect(gridBox.width).toBeCloseTo(mainBox.width, 1);
+  expect(secondCard.y).toBeCloseTo(firstCard.y, 1);
+  expect(secondCard.x).toBeGreaterThan(firstCard.x);
+});
+
+test('production-rendered catalogue stacks the information rail before one-column controls and cards at 320px', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto(baseURL);
+
+  const rail = page.locator('aside.catalog-information-rail');
+  const search = page.getByRole('searchbox', { name: 'Search catalog' });
+  const firstCard = page.locator('article[data-catalog-item]').first();
+  const secondCard = page.locator('article[data-catalog-item]').nth(1);
+  const status = rail.locator('[data-catalog-status]');
+  const categoryGroup = page.getByRole('group', { name: 'Filter by category' });
+  const categoryButtons = page.locator('button[data-category-filter]');
+  const [railBox, searchBox, firstCardBox, secondCardBox] = await Promise.all([
+    rail.boundingBox(), search.boundingBox(), firstCard.boundingBox(), secondCard.boundingBox(),
+  ]);
+
+  expect(railBox.y).toBeLessThan(searchBox.y);
+  expect(await rail.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await page.getByRole('link', { name: 'Skip to content' }).evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-status]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await status.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await search.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')?.closest('.catalog-controls')?.querySelector('.category-filters')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await search.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-grid]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await categoryGroup.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-grid]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(searchBox.y).toBeLessThan(firstCardBox.y);
+  expect(secondCardBox.y).toBeGreaterThan(firstCardBox.y);
+  expect(await search.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(0);
+  await search.focus();
+  await page.keyboard.press('Tab');
+  await expect(categoryButtons.first()).toBeFocused();
+  const categoryCount = await categoryButtons.count();
+  for (let index = 1; index < categoryCount; index += 1) {
+    await page.keyboard.press('Tab');
+    await expect(categoryButtons.nth(index)).toBeFocused();
+  }
+  await page.keyboard.press('Tab');
+  await expect(firstCard.getByRole('link')).toBeFocused();
+
+  for (const control of [search, ...await categoryButtons.all()]) {
+    const box = await control.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  await search.fill('no matching catalogue item');
+  await expect(page.getByRole('status')).toHaveText('0 catalog items');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});
+
 test('production-rendered admin identity receives its authorized card set', async ({ page }) => {
   await page.goto(`${baseURL}/__test/admin`);
 
