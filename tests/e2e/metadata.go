@@ -10,6 +10,7 @@ import (
 	"net/url"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kjson "sigs.k8s.io/json"
 )
 
 // ReadSecretMetadata negotiates metadata exclusively. In particular it does
@@ -55,7 +56,19 @@ func ReadSecretMetadata(ctx context.Context, client *http.Client, origin, namesp
 		case "kind":
 			err = decoder.Decode(&obj.Kind)
 		case "metadata":
-			err = decoder.Decode(&obj.ObjectMeta)
+			var raw json.RawMessage
+			if decoder.Decode(&raw) != nil {
+				return nil, errors.New("metadata response invalid")
+			}
+			var duplicateCheck any
+			strictErrors, decodeErr := kjson.UnmarshalStrict(raw, &duplicateCheck, kjson.DisallowDuplicateFields)
+			if decodeErr != nil || len(strictErrors) != 0 {
+				return nil, errors.New("metadata response invalid")
+			}
+			strictErrors, decodeErr = kjson.UnmarshalStrict(raw, &obj.ObjectMeta, kjson.DisallowDuplicateFields, kjson.DisallowUnknownFields)
+			if decodeErr != nil || len(strictErrors) != 0 {
+				return nil, errors.New("metadata response invalid")
+			}
 		default:
 			// Reject full-object fields without decoding, retaining, or logging values.
 			return nil, errors.New("metadata response invalid")

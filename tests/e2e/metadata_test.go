@@ -24,7 +24,7 @@ func (r *readDetector) Close() error               { return nil }
 
 func TestSecretMetadataNegotiationAndShape(t *testing.T) {
 	const metadataType = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
-	const partial = `{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","resourceVersion":"12842","creationTimestamp":"2026-09-18T12:00:00Z","labels":{"app.kubernetes.io/managed-by":"vault-secrets-operator"}}}`
+	const partial = `{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","resourceVersion":"12842","creationTimestamp":"2026-09-18T12:00:00Z","labels":{"app.kubernetes.io/managed-by":"vault-secrets-operator"},"managedFields":[{"manager":"vault-secrets-operator","operation":"Update","apiVersion":"v1","time":"2026-09-18T12:00:00Z","fieldsType":"FieldsV1","fieldsV1":{"f:metadata":{"f:labels":{}}}}]}}`
 	for _, tc := range []struct {
 		name, media, body string
 		status            int
@@ -36,6 +36,12 @@ func TestSecretMetadataNegotiationAndShape(t *testing.T) {
 		{"full Secret stringData", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid"},"stringData":{"password":"MUST_NOT_EXPOSE"}}`, 200, false, false},
 		{"full Secret type", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid"},"type":"MUST_NOT_EXPOSE"}`, 200, false, false},
 		{"unknown top-level field", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid"},"unexpected":"MUST_NOT_EXPOSE"}`, 200, false, false},
+		{"duplicate metadata name", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"MUST_NOT_EXPOSE","name":"session","namespace":"portal","uid":"secret-uid"}}`, 200, false, false},
+		{"duplicate metadata namespace", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"MUST_NOT_EXPOSE","namespace":"portal","uid":"secret-uid"}}`, 200, false, false},
+		{"duplicate metadata UID", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"MUST_NOT_EXPOSE","uid":"secret-uid"}}`, 200, false, false},
+		{"duplicate metadata resourceVersion", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","resourceVersion":"MUST_NOT_EXPOSE","resourceVersion":"12842"}}`, 200, false, false},
+		{"duplicate metadata label key", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","labels":{"managed-by":"MUST_NOT_EXPOSE","managed-by":"vso"}}}`, 200, false, false},
+		{"duplicate managedFields FieldsV1 key", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","managedFields":[{"manager":"vso","fieldsType":"FieldsV1","fieldsV1":{"f:metadata":{"f:labels":{},"f:labels":{".":{}}}}}]}}`, 200, false, false},
 		{"trailing object", "application/json", partial + ` {"data":{"password":"MUST_NOT_EXPOSE"}}`, 200, false, false},
 		{"oversized metadata", "application/json", `{"apiVersion":"meta.k8s.io/v1","kind":"PartialObjectMetadata","metadata":{"name":"session","namespace":"portal","uid":"secret-uid","annotations":{"large":"` + strings.Repeat("x", 128<<10) + `"}}}`, 200, false, false},
 		{"negotiation refused", "application/json", `{"message":"MUST_NOT_READ"}`, 406, false, true},
