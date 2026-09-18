@@ -14,6 +14,25 @@ test('production-rendered portal declares the dark theme contract on the documen
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
+test('production-rendered portal resolves a first visit from the operating-system theme', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(baseURL);
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('production-rendered portal switches and persists an explicit theme choice', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(baseURL);
+
+  const toggle = page.getByRole('button', { name: 'Switch to dark theme' });
+  await toggle.click();
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(toggle).toHaveAccessibleName('Switch to light theme');
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('portal.theme'))).toBe('dark');
+});
+
 test('production-rendered portal applies the light palette when the document theme is light', async ({ page }) => {
   await page.goto(baseURL);
   await page.locator('html').evaluate((element) => element.setAttribute('data-theme', 'light'));

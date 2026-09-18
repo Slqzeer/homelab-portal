@@ -6,6 +6,27 @@ const clearSearch = document.querySelector('[data-catalog-clear-search]');
 const emptyResults = document.querySelector('[data-empty-results]');
 const emptyClearSearch = document.querySelector('[data-empty-clear-search]');
 const emptyClearCategory = document.querySelector('[data-empty-clear-category]');
+const themeToggle = document.querySelector('[data-theme-toggle]');
+
+const updateThemeToggle = () => {
+  if (!themeToggle) return;
+  themeToggle.textContent = document.documentElement.dataset.theme === 'dark'
+    ? 'Switch to light theme'
+    : 'Switch to dark theme';
+};
+
+updateThemeToggle();
+
+themeToggle?.addEventListener('click', () => {
+  const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = nextTheme;
+  try {
+    window.localStorage.setItem('portal.theme', nextTheme);
+  } catch {
+    // The visual preference still applies for this page when storage is unavailable.
+  }
+  updateThemeToggle();
+});
 
 if (search && status) {
   let selectedCategory = '';
