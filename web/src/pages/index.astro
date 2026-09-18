@@ -16,12 +16,16 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Trusted links to intentionally published homelab services." />
     <title>Homelab Portal</title>
+    <script is:inline src="/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header catalog-header">
       <p class="eyebrow catalog-header-label">Homelab Portal</p>
-      {import.meta.env.DEV && <nav class="identity-actions" aria-label="Account"><a class="button button-secondary" href="/admin">Admin diagnostics</a></nav>}
+      <nav class="identity-actions" aria-label="Account">
+        <button class="button button-secondary" type="button" data-theme-toggle>Switch to light theme</button>
+        {import.meta.env.DEV && <a class="button button-secondary" href="/admin">Admin diagnostics</a>}
+      </nav>
     </header>
     <main id="main-content" class="site-main" tabindex="-1">
       <div class="catalog-shell">
