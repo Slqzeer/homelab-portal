@@ -21,7 +21,8 @@ test('production-rendered anonymous cards filter locally and never request catal
   await expect(visibleArticles(page)).toHaveCount(4);
   const rail = page.locator('aside.catalog-information-rail');
   const search = page.getByRole('searchbox', { name: 'Search catalog' });
-  await expect(rail).toContainText('Tailnet catalogue');
+  await expect(page.locator('header.site-header')).toContainText('Tailnet catalogue');
+  await expect(rail).not.toContainText('Tailnet catalogue');
   await expect(rail.locator('[data-catalog-status]')).toHaveText('4 catalog items');
   await expect(page.locator('[data-catalog-status]')).toHaveCount(1);
   expect(await rail.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
@@ -84,16 +85,25 @@ test('production-rendered catalogue uses a compact desktop rail and flexible mul
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(baseURL);
 
+  const header = page.locator('header.site-header');
+  const catalogueLabel = header.getByText('Tailnet catalogue', { exact: true });
+  const actions = header.locator('.identity-actions');
   const rail = page.locator('aside.catalog-information-rail');
   const main = page.locator('.catalog-main');
   const grid = page.locator('[data-catalog-grid]');
-  const [railBox, mainBox, gridBox, firstCard, secondCard] = await Promise.all([
+  const [headerBox, labelBox, actionsBox, railBox, mainBox, gridBox, firstCard, secondCard] = await Promise.all([
+    header.boundingBox(), catalogueLabel.boundingBox(), actions.boundingBox(),
     rail.boundingBox(), main.boundingBox(), grid.boundingBox(),
     page.locator('article[data-catalog-item]').nth(0).boundingBox(),
     page.locator('article[data-catalog-item]').nth(1).boundingBox(),
   ]);
 
+  expect(labelBox.x).toBeCloseTo(headerBox.x, 1);
+  expect(Math.abs((labelBox.y + (labelBox.height / 2)) - (actionsBox.y + (actionsBox.height / 2)))).toBeLessThanOrEqual(2);
+  expect(actionsBox.x + actionsBox.width).toBeCloseTo(headerBox.x + headerBox.width, 1);
+  await expect(rail).not.toContainText('Tailnet catalogue');
   expect(railBox.x).toBeLessThan(mainBox.x);
+  expect(railBox.x).toBeCloseTo(headerBox.x, 1);
   expect(railBox.y).toBeCloseTo(mainBox.y, 1);
   expect(mainBox.width).toBeGreaterThan(railBox.width * 1.5);
   expect(gridBox.width).toBeCloseTo(mainBox.width, 1);

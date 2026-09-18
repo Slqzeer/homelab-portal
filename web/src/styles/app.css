@@ -69,7 +69,7 @@
 
   .site-header,
   .site-main {
-    width: min(64rem, calc(100% - 2rem));
+    width: min(88rem, calc(100% - 2rem));
     margin-inline: auto;
   }
 
@@ -78,11 +78,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding-block: 2rem 1rem;
+    padding-block: 1rem 0.75rem;
   }
 
   .catalog-header {
-    justify-content: flex-end;
+    justify-content: space-between;
+  }
+
+  .catalog-header-label {
+    margin-bottom: 0;
   }
 
   .site-header h1,
@@ -93,7 +97,7 @@
   }
 
   .site-main {
-    padding-block: 1rem 3rem;
+    padding-block: 0.75rem 2rem;
   }
 
   .visually-hidden {
@@ -165,8 +169,27 @@
     min-width: 0;
   }
 
+  .catalog-shell {
+    display: grid;
+    grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  .catalog-information-rail {
+    padding-block: 0.5rem;
+  }
+
+  .catalog-main {
+    min-width: 0;
+  }
+
   .catalog-information-rail > :last-child {
     margin-bottom: 0;
+  }
+
+  .catalog-information-rail .catalog-status {
+    margin-top: 1.5rem;
   }
 
   .catalog-information-rail .stale-banner {
@@ -186,9 +209,9 @@
   .catalog-controls {
     display: grid;
     gap: 1rem;
-    margin-block: 2rem 1.5rem;
+    margin-block: 0 1rem;
     border-block: 1px solid #334155;
-    padding-block: 1.25rem;
+    padding-block: 0 1rem;
   }
 
   .search-control {
@@ -240,18 +263,18 @@
 
   .catalog-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    gap: 0.75rem;
   }
 
   .catalog-card {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 1rem;
+    gap: 0.75rem;
     min-width: 0;
     border: 1px solid #334155;
     border-radius: 0.875rem;
-    padding: 1.25rem;
+    padding: 1rem;
     background: rgb(30 41 59 / 88%);
     box-shadow: 0 0.75rem 2rem rgb(2 6 23 / 20%);
   }
@@ -315,9 +338,30 @@
     vertical-align: top;
   }
 
-  @media (min-width: 40rem) {
-    .catalog-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+  @media (max-width: 55.999rem) {
+    .catalog-shell {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+    }
+
+    .catalog-information-rail {
+      padding-block: 0;
+    }
+  }
+
+  @media (max-width: 24rem) {
+    .site-header,
+    .site-main {
+      width: min(100% - 1rem, 88rem);
+    }
+
+    .search-input-row {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .clear-search {
+      width: 100%;
     }
   }
 

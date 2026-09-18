@@ -20,12 +20,12 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header catalog-header">
+      <p class="eyebrow catalog-header-label">Tailnet catalogue</p>
       {import.meta.env.DEV && <nav class="identity-actions" aria-label="Account"><a class="button button-secondary" href="/admin">Admin diagnostics</a></nav>}
     </header>
     <main id="main-content" class="site-main" tabindex="-1">
       <div class="catalog-shell">
         <aside class="catalog-information-rail" aria-labelledby="portal-title">
-          <p class="eyebrow">Tailnet catalogue</p>
           <h1 id="portal-title">Homelab Portal</h1>
           <p class="eyebrow">Available to you</p>
           <h2>Service catalogue</h2>
