@@ -70,17 +70,46 @@ test('production-rendered portal falls back to the operating-system theme when s
   await unavailableContext.close();
 });
 
-test('production-rendered portal switches and persists an explicit theme choice', async ({ page }) => {
+test('production-rendered portal manually switches themes without browser side effects', async ({ page, browser }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto(baseURL);
 
   const toggle = page.locator('[data-theme-toggle]');
+  const box = await toggle.boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await expect(toggle.locator('[data-theme-toggle-icon]')).toHaveAttribute('aria-hidden', 'true');
+
+  const urlBefore = page.url();
+  const cookiesBefore = await page.context().cookies();
+  const requests = [];
+  page.on('request', (request) => requests.push(request.url()));
+
   await expect(toggle).toHaveAccessibleName('Switch to dark theme');
-  await toggle.click();
+  await toggle.focus();
+  await page.keyboard.press('Enter');
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(toggle).toHaveAccessibleName('Switch to light theme');
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('portal.theme'))).toBe('dark');
+  await expect.poll(() => page.evaluate(() => Object.keys(window.localStorage))).toEqual(['portal.theme']);
+  expect(page.url()).toBe(urlBefore);
+  expect(await page.context().cookies()).toEqual(cookiesBefore);
+  expect(requests).toEqual([]);
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  const touchContext = await browser.newContext({ hasTouch: true, ignoreHTTPSErrors: true });
+  const touchPage = await touchContext.newPage();
+  await touchPage.emulateMedia({ colorScheme: 'light' });
+  await touchPage.goto(baseURL);
+  await touchPage.tap('[data-theme-toggle]');
+  await expect(touchPage.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await touchContext.close();
 });
 
 test('production-rendered portal applies the light palette when the document theme is light', async ({ page }) => {

@@ -45,8 +45,16 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 		`data-empty-results hidden`, `data-empty-clear-search>Clear search</button>`,
 		`data-empty-clear-category>Return to All</button>`, `No catalog items match these filters.`,
 		`data-catalog-status role="status" aria-live="polite"`,
+		`<button class="button button-secondary theme-toggle" type="button" data-theme-toggle>`,
+		`data-theme-toggle-icon aria-hidden="true"`,
+		`data-theme-toggle-label>Switch to light theme</span>`,
 		`data-catalog-item`, `data-catalog-name`, `data-catalog-description`, `data-catalog-category`,
 		`href="/auth/login"`, `src="/icons/grafana.svg"`,
+	)
+	assertHTMLOrder(t, anonymous,
+		`<nav class="identity-actions" aria-label="Account">`,
+		`data-theme-toggle`,
+		`href="/auth/login"`,
 	)
 	assertThemeInitializer(t, anonymous)
 	assertContainsNone(t, anonymous, "Secret Admin", "Private operations", "secret-admin.tail.example", ">Sign out<", `href="/admin"`)

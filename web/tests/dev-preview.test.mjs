@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test';
 
+test('developer preview exposes a labelled decorative theme control', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+
+  const toggle = page.getByRole('button', { name: 'Switch to dark theme' });
+  await expect(toggle).toBeVisible();
+  await expect(toggle.locator('[data-theme-toggle-icon]')).toHaveAttribute('aria-hidden', 'true');
+  await expect(toggle.locator('[data-theme-toggle-label]')).toHaveText('Switch to dark theme');
+});
+
 test('developer can preview and filter realistic catalogue states with live reload enabled', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const response = await page.goto('/');

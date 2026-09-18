@@ -7,12 +7,15 @@ const emptyResults = document.querySelector('[data-empty-results]');
 const emptyClearSearch = document.querySelector('[data-empty-clear-search]');
 const emptyClearCategory = document.querySelector('[data-empty-clear-category]');
 const themeToggle = document.querySelector('[data-theme-toggle]');
+const themeToggleIcon = document.querySelector('[data-theme-toggle-icon]');
+const themeToggleLabel = document.querySelector('[data-theme-toggle-label]');
 
 const updateThemeToggle = () => {
-  if (!themeToggle) return;
-  themeToggle.textContent = document.documentElement.dataset.theme === 'dark'
-    ? 'Switch to light theme'
-    : 'Switch to dark theme';
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  if (themeToggleIcon) themeToggleIcon.textContent = isDark ? '\u263e' : '\u2600';
+  if (themeToggleLabel) {
+    themeToggleLabel.textContent = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+  }
 };
 
 updateThemeToggle();
