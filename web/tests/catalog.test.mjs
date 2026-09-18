@@ -140,6 +140,24 @@ test('production-rendered catalogue uses a compact desktop rail and flexible mul
   expect(secondCard.x).toBeGreaterThan(firstCard.x);
 });
 
+test('production-rendered catalogue keeps readable multi-column cards at tablet width', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto(baseURL);
+
+  const grid = page.locator('[data-catalog-grid]');
+  const firstCard = page.locator('article[data-catalog-item]').nth(0);
+  const secondCard = page.locator('article[data-catalog-item]').nth(1);
+  const [gridBox, firstBox, secondBox] = await Promise.all([
+    grid.boundingBox(), firstCard.boundingBox(), secondCard.boundingBox(),
+  ]);
+
+  expect(gridBox.width).toBeGreaterThanOrEqual(560);
+  expect(firstBox.width).toBeGreaterThanOrEqual(272);
+  expect(secondBox.width).toBeGreaterThanOrEqual(272);
+  expect(secondBox.y).toBeCloseTo(firstBox.y, 1);
+  expect(secondBox.x).toBeGreaterThan(firstBox.x);
+});
+
 test('production-rendered wide catalogue keeps opaque controls sticky without hiding focused cards', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 500 });
   await page.goto(baseURL);
