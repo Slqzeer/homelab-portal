@@ -1,10 +1,9 @@
 ---
 interface Props {
   categories: string[];
-  count: number;
 }
 
-const { categories, count }: Props = Astro.props;
+const { categories }: Props = Astro.props;
 ---
 
 <section class="catalog-controls" aria-labelledby="catalog-filters-heading">
@@ -21,7 +20,4 @@ const { categories, count }: Props = Astro.props;
       </button>
     ))}
   </div>
-  <p class="catalog-status" data-catalog-status role="status" aria-live="polite" aria-atomic="true">
-    {count} catalog {count === 1 ? 'item' : 'items'}
-  </p>
 </section>

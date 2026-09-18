@@ -71,6 +71,37 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 	assertContainsNone(t, script, "Secret Admin", "secret-admin.tail.example", "fetch(", "XMLHttpRequest")
 }
 
+func TestRenderedCatalogPlacesInformationBeforeControls(t *testing.T) {
+	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	store := catalog.NewStore(types.NamespacedName{Namespace: "portal", Name: "portal"})
+	store.Replace([]networkingv1.Ingress{
+		publishedIngress("Grafana", "Observability", "public", "grafana"),
+	}, now)
+	sessions, err := auth.NewSessionManager(bytes.Repeat([]byte{6}, 32), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := portalhttp.New(portalhttp.Options{
+		Store: store, Sessions: sessions, Assets: assets.FS(), BaseURL: "https://portal.example",
+		Now: func() time.Time { return now }, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	html := renderHome(t, handler, nil)
+	assertContainsAll(t, html, "Tailnet catalogue", "Homelab Portal", "Available to you")
+	if got := strings.Count(html, `data-catalog-status`); got != 1 {
+		t.Fatalf("catalog status count = %d, want 1", got)
+	}
+	assertHTMLOrder(t, html,
+		`<aside class="catalog-information-rail"`,
+		`data-catalog-status role="status" aria-live="polite" aria-atomic="true"`,
+		`<section class="catalog-controls"`,
+		`<div id="catalog-items" class="catalog-grid" data-catalog-grid>`,
+	)
+}
+
 func TestRenderedStaleStateDescribesCatalogueFreshnessOnly(t *testing.T) {
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	store := catalog.NewStore(types.NamespacedName{Namespace: "portal", Name: "portal"})
@@ -87,6 +118,11 @@ func TestRenderedStaleStateDescribesCatalogueFreshnessOnly(t *testing.T) {
 	html := renderHome(t, handler, nil)
 	assertContainsAll(t, html, `role="status"`, "Catalogue information is not current", "last known catalogue links")
 	assertContainsNone(t, strings.ToLower(html), "healthy", "unhealthy", "target status", "service status")
+	assertHTMLOrder(t, html,
+		`<aside class="catalog-information-rail"`,
+		`<aside class="stale-banner" role="status" aria-live="polite">`,
+		`<section class="catalog-controls"`,
+	)
 }
 
 func publishedIngress(name, category, access, icon string) networkingv1.Ingress {
@@ -146,5 +182,17 @@ func assertContainsNone(t *testing.T, value string, unexpected ...string) {
 		if strings.Contains(value, item) {
 			t.Errorf("unexpected %q in %s", item, value)
 		}
+	}
+}
+
+func assertHTMLOrder(t *testing.T, html string, markers ...string) {
+	t.Helper()
+	offset := 0
+	for _, marker := range markers {
+		index := strings.Index(html[offset:], marker)
+		if index < 0 {
+			t.Fatalf("missing %q in rendered HTML", marker)
+		}
+		offset += index + len(marker)
 	}
 }

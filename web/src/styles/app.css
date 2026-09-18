@@ -81,8 +81,13 @@
     padding-block: 2rem 1rem;
   }
 
+  .catalog-header {
+    justify-content: flex-end;
+  }
+
   .site-header h1,
-  .catalog-heading h2 {
+  .catalog-information-rail h1,
+  .catalog-information-rail h2 {
     margin-bottom: 0;
     letter-spacing: -0.025em;
   }
@@ -154,8 +159,18 @@
     color: #ecfeff;
   }
 
-  .catalog-heading {
-    max-width: 44rem;
+  .catalog-shell,
+  .catalog-main,
+  .catalog-information-rail {
+    min-width: 0;
+  }
+
+  .catalog-information-rail > :last-child {
+    margin-bottom: 0;
+  }
+
+  .catalog-information-rail .stale-banner {
+    margin-block: 1.5rem 0;
   }
 
   .stale-banner,

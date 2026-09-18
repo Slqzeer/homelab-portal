@@ -15,8 +15,20 @@ test('production-rendered anonymous cards filter locally and never request catal
   await page.goto(baseURL);
   await expect(page.getByRole('heading', { level: 1, name: 'Homelab Portal' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Service catalogue' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Homelab Portal' })).toHaveCSS('margin-bottom', '0px');
+  await expect(page.getByRole('heading', { level: 1, name: 'Homelab Portal' })).toHaveCSS('letter-spacing', '-0.4px');
   await expect(page.locator('article.catalog-card img.catalog-icon')).toHaveCount(4);
   await expect(visibleArticles(page)).toHaveCount(4);
+  const rail = page.locator('aside.catalog-information-rail');
+  const search = page.getByRole('searchbox', { name: 'Search catalog' });
+  await expect(rail).toContainText('Tailnet catalogue');
+  await expect(rail.locator('[data-catalog-status]')).toHaveText('4 catalog items');
+  await expect(page.locator('[data-catalog-status]')).toHaveCount(1);
+  expect(await rail.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await search.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-grid]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  const header = await page.locator('header.site-header').boundingBox();
+  const actions = await page.locator('header.site-header .identity-actions').boundingBox();
+  expect(actions.x + actions.width).toBeCloseTo(header.x + header.width, 1);
 
   const anonymousHTML = await page.content();
   expect(anonymousHTML).not.toContain('Secret Admin');
@@ -29,7 +41,6 @@ test('production-rendered anonymous cards filter locally and never request catal
   }
   const initializationRequests = [...requests];
 
-  const search = page.getByRole('searchbox', { name: 'Search catalog' });
   const monitoring = page.getByRole('button', { name: 'Monitoring' });
   const all = page.getByRole('button', { name: 'All' });
 
@@ -71,6 +82,7 @@ test('production-rendered admin identity receives its authorized card set', asyn
   await expect(page.getByRole('article').filter({ hasText: 'Secret Admin' })).toBeVisible();
   await expect(page.locator('a[href="https://secret-admin.tail.example"]')).toHaveCount(1);
   await expect(page.locator('img[src="/icons/generic.svg"]')).toHaveCount(2);
+  await expect(page.locator('aside.catalog-information-rail a[href^="https://"]')).toHaveCount(0);
 });
 
 test('compiled production layout wraps maximum valid catalogue text at a narrow viewport', async ({ page }) => {

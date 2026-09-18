@@ -8,6 +8,14 @@ test('developer can preview and filter realistic catalogue states with live relo
   await expect(page.getByText('Catalogue is stale.', { exact: false })).toBeVisible();
   await expect(page.locator('[data-catalog-item]')).toHaveCount(5);
 
+  const rail = page.locator('aside.catalog-information-rail');
+  const search = page.getByRole('searchbox', { name: 'Search catalog' });
+  await expect(rail).toContainText('Tailnet catalogue');
+  await expect(rail.locator('[data-catalog-status]')).toHaveText('5 catalog items');
+  await expect(page.locator('[data-catalog-status]')).toHaveCount(1);
+  expect(await rail.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(await search.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-grid]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+
   await page.getByRole('button', { name: 'Monitoring' }).click();
 
   await expect(page.locator('[data-catalog-status]')).toHaveText('2 catalog items');

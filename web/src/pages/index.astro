@@ -19,27 +19,33 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="site-header">
-      <div><p class="eyebrow">Tailnet catalogue</p><h1>Homelab Portal</h1></div>
+    <header class="site-header catalog-header">
       {import.meta.env.DEV && <nav class="identity-actions" aria-label="Account"><a class="button button-secondary" href="/admin">Admin diagnostics</a></nav>}
     </header>
     <main id="main-content" class="site-main" tabindex="-1">
-      <div class="catalog-heading">
-        <div>
+      <div class="catalog-shell">
+        <aside class="catalog-information-rail" aria-labelledby="portal-title">
+          <p class="eyebrow">Tailnet catalogue</p>
+          <h1 id="portal-title">Homelab Portal</h1>
           <p class="eyebrow">Available to you</p>
           <h2>Service catalogue</h2>
           <p>Open an intentionally published service. Each target application manages its own access.</p>
+          <p class="catalog-status" data-catalog-status role="status" aria-live="polite" aria-atomic="true">
+            {items.length} catalog {items.length === 1 ? 'item' : 'items'}
+          </p>
+          <StaleBanner stale={import.meta.env.DEV} />
+        </aside>
+        <div class="catalog-main">
+          <CategoryFilter categories={categories} />
+          <section aria-labelledby="catalog-results-heading">
+            <h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3>
+            <div id="catalog-items" class="catalog-grid" data-catalog-grid>
+              {items.map((item) => <CatalogCard {...item} />)}
+              {items.length === 0 && <p class="empty-catalog">No catalog items are available.</p>}
+            </div>
+          </section>
         </div>
       </div>
-      <StaleBanner stale={import.meta.env.DEV} />
-      <CategoryFilter categories={categories} count={items.length} />
-      <section aria-labelledby="catalog-results-heading">
-        <h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3>
-        <div id="catalog-items" class="catalog-grid" data-catalog-grid>
-          {items.map((item) => <CatalogCard {...item} />)}
-          {items.length === 0 && <p class="empty-catalog">No catalog items are available.</p>}
-        </div>
-      </section>
     </main>
     <script is:inline src="/app.js" defer></script>
   </body>
