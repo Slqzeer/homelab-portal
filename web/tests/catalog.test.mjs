@@ -8,6 +8,31 @@ const longCategory = 'C'.repeat(40);
 
 const visibleArticles = (page) => page.locator('article[data-catalog-item]:visible');
 
+test('production-rendered portal declares the dark theme contract on the document root', async ({ page }) => {
+  await page.goto(baseURL);
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('production-rendered portal applies the light palette when the document theme is light', async ({ page }) => {
+  await page.goto(baseURL);
+  await page.locator('html').evaluate((element) => element.setAttribute('data-theme', 'light'));
+
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(248, 250, 252)');
+});
+
+test('production-rendered portal applies light theme surfaces to catalogue controls and feedback', async ({ page }) => {
+  await page.goto(baseURL);
+  await page.locator('html').evaluate((element) => element.setAttribute('data-theme', 'light'));
+
+  await expect(page.locator('.catalog-card').first()).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(page.getByRole('searchbox', { name: 'Search catalog' })).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(page.getByRole('button', { name: 'All' })).toHaveCSS('background-color', 'rgb(14, 116, 144)');
+  await page.getByRole('searchbox', { name: 'Search catalog' }).fill('no matching catalogue item');
+  await expect(page.locator('[data-empty-results]')).toHaveCSS('color', 'rgb(51, 65, 85)');
+});
+
 test('production-rendered anonymous cards filter locally and never request catalogue data', async ({ page }) => {
   const requests = [];
   page.on('request', (request) => requests.push(request.url()));

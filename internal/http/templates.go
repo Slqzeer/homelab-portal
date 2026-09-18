@@ -17,7 +17,7 @@ type pageData struct {
 }
 
 var homeTemplate = template.Must(template.New("home").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Trusted links to intentionally published homelab services."><title>Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Trusted links to intentionally published homelab services."><title>Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head>
 <body><a class="skip-link" href="#main-content">Skip to content</a>
 <header class="site-header catalog-header"><p class="eyebrow catalog-header-label">Tailnet catalogue</p><nav class="identity-actions" aria-label="Account">
 {{if .Authenticated}}<form action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">Sign out</button></form>{{else}}<a class="button button-secondary" href="/auth/login">Sign in</a>{{end}}
@@ -33,7 +33,7 @@ var homeTemplate = template.Must(template.New("home").Parse(`<!doctype html>
 </div></section></div></div></main><script src="/app.js" defer></script></body></html>`))
 
 var adminTemplate = template.Must(template.New("admin").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin diagnostics · Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head><body><a class="skip-link" href="#main-content">Skip to content</a><header class="site-header"><div><p class="eyebrow">Read-only operations</p><h1>Admin diagnostics</h1></div><nav aria-label="Portal"><a class="button button-secondary" href="/">Back to catalogue</a></nav></header><main id="main-content" class="site-main" tabindex="-1">
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin diagnostics · Homelab Portal</title>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head><body><a class="skip-link" href="#main-content">Skip to content</a><header class="site-header"><div><p class="eyebrow">Read-only operations</p><h1>Admin diagnostics</h1></div><nav aria-label="Portal"><a class="button button-secondary" href="/">Back to catalogue</a></nav></header><main id="main-content" class="site-main" tabindex="-1">
 <p class="watcher-status"><strong>Catalogue watcher:</strong> {{.Watcher}}</p>
 <div class="table-region" role="region" aria-label="Publication diagnostics" tabindex="0"><table><thead><tr><th scope="col">Namespace</th><th scope="col">Ingress</th><th scope="col">Rule</th><th scope="col">Remediation</th></tr></thead><tbody>
 {{range .Diagnostics}}<tr><td>{{.Namespace}}</td><td>{{.Ingress}}</td><td>{{.Rule}}</td><td>{{.Remediation}}</td></tr>{{end}}

@@ -60,6 +60,9 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 	assertContainsAll(t, admin, `>Sign out<`, `href="/admin"`, "Secret Admin", "https://secret-admin.tail.example", `src="/icons/generic.svg"`)
 	assertContainsNone(t, admin, `>Sign in<`)
 
+	adminPage := serve(t, handler, http.MethodGet, "/admin", adminCookie)
+	assertContainsAll(t, adminPage, `<html lang="en" data-theme="dark">`)
+
 	for _, match := range regexp.MustCompile(`(?:src|href)="([^"]+)"`).FindAllStringSubmatch(anonymous, -1) {
 		value := match[1]
 		if strings.HasSuffix(value, ".css") || strings.HasSuffix(value, ".js") || strings.HasSuffix(value, ".svg") {

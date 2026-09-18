@@ -4,6 +4,7 @@ test('developer can preview and filter realistic catalogue states with live relo
   const response = await page.goto('/');
 
   expect(await response.text()).toContain('/@vite/client');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByRole('heading', { name: 'Service catalogue' })).toBeVisible();
   await expect(page.getByText('Catalogue is stale.', { exact: false })).toBeVisible();
   await expect(page.locator('[data-catalog-item]')).toHaveCount(5);
@@ -43,6 +44,7 @@ test('developer can preview and filter realistic catalogue states with live relo
 test('developer can preview populated admin diagnostics', async ({ page }) => {
   await page.goto('/admin');
 
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByRole('heading', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await expect(page.getByText('invalid access annotation')).toBeVisible();
