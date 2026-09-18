@@ -2,9 +2,10 @@
 import CatalogCard from '../components/CatalogCard.astro';
 import CategoryFilter from '../components/CategoryFilter.astro';
 import StaleBanner from '../components/StaleBanner.astro';
+import { devCatalogueItems } from '../data/dev-fixtures';
 import '../styles/app.css';
 
-const items: Array<{ name: string; description: string; category: string; icon: string; targetURL: string }> = [];
+const items = import.meta.env.DEV ? devCatalogueItems : [];
 const categories = [...new Set(items.map((item) => item.category))].sort();
 ---
 
@@ -20,6 +21,7 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
       <div><p class="eyebrow">Tailnet catalogue</p><h1>Homelab Portal</h1></div>
+      {import.meta.env.DEV && <nav class="identity-actions" aria-label="Account"><a class="button button-secondary" href="/admin">Admin diagnostics</a></nav>}
     </header>
     <main id="main-content" class="site-main" tabindex="-1">
       <div class="catalog-heading">
@@ -29,7 +31,7 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
           <p>Open an intentionally published service. Each target application manages its own access.</p>
         </div>
       </div>
-      <StaleBanner stale={false} />
+      <StaleBanner stale={import.meta.env.DEV} />
       <CategoryFilter categories={categories} count={items.length} />
       <section aria-labelledby="catalog-results-heading">
         <h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3>

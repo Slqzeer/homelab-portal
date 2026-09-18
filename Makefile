@@ -1,4 +1,8 @@
-.PHONY: web-build test lint build
+.PHONY: dev web-build test lint build
+
+# Start the fixture-backed Astro preview with live reload.
+dev:
+	npm --prefix web run dev
 
 # Install exactly the locked frontend dependencies and stage the static build.
 web-build:

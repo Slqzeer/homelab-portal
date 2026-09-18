@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro dev --ignore-lock --host 127.0.0.1 --port 4321",
     "build": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro build",
     "lint": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro check",
     "pretest": "npm run build",
-    "test": "playwright test --config tests/playwright.config.mjs"
+    "test": "playwright test --config tests/playwright.config.mjs",
+    "test:dev": "playwright test --config tests/dev-preview.config.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.0",
