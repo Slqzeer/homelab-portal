@@ -39,6 +39,14 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
           <CategoryFilter categories={categories} />
           <section aria-labelledby="catalog-results-heading">
             <h3 id="catalog-results-heading" class="visually-hidden">Catalog items</h3>
+            <section class="empty-filter-results" data-empty-results hidden aria-labelledby="empty-filter-results-heading">
+              <h3 id="empty-filter-results-heading">No catalog items match these filters.</h3>
+              <p>Clear a filter to see available catalog items.</p>
+              <div class="empty-filter-actions">
+                <button type="button" data-empty-clear-search>Clear search</button>
+                <button type="button" data-empty-clear-category>Return to All</button>
+              </div>
+            </section>
             <div id="catalog-items" class="catalog-grid" data-catalog-grid>
               {items.map((item) => <CatalogCard {...item} />)}
               {items.length === 0 && <p class="empty-catalog">No catalog items are available.</p>}

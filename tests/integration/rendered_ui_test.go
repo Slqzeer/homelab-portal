@@ -42,6 +42,8 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 	assertContainsAll(t, anonymous,
 		`<label for="catalog-search">Search catalog</label>`,
 		`data-catalog-search`, `data-catalog-clear-search hidden>Clear search</button>`, `data-category-filter="" aria-pressed="true"`,
+		`data-empty-results hidden`, `data-empty-clear-search>Clear search</button>`,
+		`data-empty-clear-category>Return to All</button>`, `No catalog items match these filters.`,
 		`data-catalog-status role="status" aria-live="polite"`,
 		`data-catalog-item`, `data-catalog-name`, `data-catalog-description`, `data-catalog-category`,
 		`href="/auth/login"`, `src="/icons/grafana.svg"`,

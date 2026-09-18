@@ -44,7 +44,10 @@ test('production-rendered anonymous cards filter locally and never request catal
 
   const monitoring = page.getByRole('button', { name: 'Monitoring' });
   const all = page.getByRole('button', { name: 'All' });
-  const clearSearch = page.getByRole('button', { name: 'Clear search' });
+  const clearSearch = page.getByRole('button', { name: 'Clear search', exact: true }).first();
+  const emptyResults = page.locator('[data-empty-results]');
+  const recoveryClearSearch = page.getByRole('button', { name: 'Clear search', exact: true }).last();
+  const returnToAll = page.getByRole('button', { name: 'Return to All' });
 
   await expect(clearSearch).toBeHidden();
 
@@ -77,6 +80,31 @@ test('production-rendered anonymous cards filter locally and never request catal
   await all.click();
   await expect(visibleArticles(page)).toHaveCount(4);
   await expect(page.getByRole('status')).toHaveText('4 catalog items');
+
+  await monitoring.click();
+  await search.fill('no matching catalogue item');
+  await expect(visibleArticles(page)).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveText('0 catalog items');
+  await expect(emptyResults).toBeVisible();
+  for (const control of [recoveryClearSearch, returnToAll]) {
+    const box = await control.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await recoveryClearSearch.click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(monitoring).toHaveAttribute('aria-pressed', 'true');
+  await expect(visibleArticles(page)).toHaveCount(2);
+
+  await search.fill('keycloak');
+  await expect(visibleArticles(page)).toHaveCount(0);
+  await returnToAll.click();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(search).toHaveValue('keycloak');
+  await expect(visibleArticles(page)).toHaveCount(1);
+  await expect(emptyResults).toBeHidden();
   expect(await page.content()).not.toContain('Secret Admin');
   expect(requests).toEqual(initializationRequests);
 });

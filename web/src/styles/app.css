@@ -136,7 +136,8 @@
   }
 
   .button,
-  .filter-button {
+  .filter-button,
+  .empty-filter-actions button {
     display: inline-flex;
     align-items: center;
     min-height: 2.75rem;
@@ -317,6 +318,24 @@
     border-radius: 0.75rem;
     padding: 1.25rem;
     color: #cbd5e1;
+  }
+
+  .empty-filter-results {
+    margin-bottom: 1rem;
+    border: 1px dashed #475569;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    color: #cbd5e1;
+  }
+
+  .empty-filter-results h3 {
+    margin-bottom: 0.5rem;
+  }
+
+  .empty-filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .table-region {

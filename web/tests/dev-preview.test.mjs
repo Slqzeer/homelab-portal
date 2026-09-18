@@ -10,10 +10,12 @@ test('developer can preview and filter realistic catalogue states with live relo
 
   const rail = page.locator('aside.catalog-information-rail');
   const search = page.getByRole('searchbox', { name: 'Search catalog' });
-  await expect(page.locator('header.site-header')).toContainText('Tailnet catalogue');
-  await expect(rail).not.toContainText('Tailnet catalogue');
+  const emptyResults = page.locator('[data-empty-results]');
+  await expect(page.locator('header.site-header')).toContainText('Homelab Portal');
+  await expect(rail).not.toContainText('Homelab Portal');
   await expect(rail.locator('[data-catalog-status]')).toHaveText('5 catalog items');
   await expect(page.locator('[data-catalog-status]')).toHaveCount(1);
+  await expect(emptyResults).toBeHidden();
   expect(await rail.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-search]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   expect(await search.evaluate((element) => Boolean(element.compareDocumentPosition(document.querySelector('[data-catalog-grid]')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
 
@@ -32,6 +34,10 @@ test('developer can preview and filter realistic catalogue states with live relo
   await expect(search).toHaveValue('');
   await expect(page.locator('[data-catalog-status]')).toHaveText('2 catalog items');
   await expect(clearSearch).toBeHidden();
+
+  await search.fill('no matching catalogue item');
+  await expect(emptyResults).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Return to All' })).toBeVisible();
 });
 
 test('developer can preview populated admin diagnostics', async ({ page }) => {
