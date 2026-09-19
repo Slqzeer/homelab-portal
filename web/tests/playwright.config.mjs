@@ -11,7 +11,7 @@ export default defineConfig({
     cwd: fileURLToPath(new URL('../..', import.meta.url)),
     url: 'https://127.0.0.1:4173/',
     ignoreHTTPSErrors: true,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
   },
   use: {
     browserName: 'chromium',
