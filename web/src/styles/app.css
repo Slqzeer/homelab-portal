@@ -193,6 +193,11 @@
     gap: 0.5rem;
   }
 
+  .profile-entry { position: relative; display: inline-flex; }
+  .profile-link { display: inline-grid; min-width: 2.75rem; min-height: 2.75rem; place-items: center; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-elevated); color: var(--color-text); font-weight: 700; text-decoration: none; }
+  .profile-preview { position: absolute; right: 0; top: calc(100% + .5rem); z-index: 2; width: max-content; max-width: min(18rem, 90vw); padding: .75rem; border: 1px solid var(--color-border); border-radius: .5rem; background: var(--color-surface); color: var(--color-text); opacity: 0; pointer-events: none; }
+  .profile-entry:hover .profile-preview, .profile-entry:focus-within .profile-preview { opacity: 1; }
+
   .theme-toggle [data-theme-toggle-icon] {
     display: inline-grid;
     width: 1rem;

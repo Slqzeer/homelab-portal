@@ -47,6 +47,20 @@ func TestSessionCreatesEncryptedCookieAndLoadsExactAuthorizationFacts(t *testing
 	require.NotEqual(t, cookie.Value, w2.Result().Cookies()[0].Value)
 }
 
+func TestSessionPreservesDisplayNameWithoutChangingAuthorization(t *testing.T) {
+	manager, err := auth.NewSessionManager(bytes.Repeat([]byte{1}, 32), nil)
+	require.NoError(t, err)
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	w := httptest.NewRecorder()
+	require.NoError(t, manager.Create(w, auth.Claims{Groups: []string{"portal-admin"}, DisplayName: "Ada Lovelace"}, now))
+	cookie := w.Result().Cookies()[0]
+	require.NotContains(t, cookie.Value, "Ada Lovelace")
+	identity, err := manager.Load(sessionRequest(cookie), now.Add(time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, "Ada Lovelace", identity.DisplayName)
+	require.True(t, identity.IsAdmin)
+}
+
 func TestSessionRotationReadsPreviousKeyButOnlyWritesCurrent(t *testing.T) {
 	oldKey, newKey := bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32)
 	old, err := auth.NewSessionManager(oldKey, nil)

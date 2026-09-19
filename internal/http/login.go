@@ -29,6 +29,7 @@ type loginTransactions struct {
 }
 type loginTransaction struct {
 	State, Nonce, Verifier string
+	ReturnTo               string
 	Expires                time.Time
 }
 
@@ -54,7 +55,7 @@ func randomToken() string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func (t *loginTransactions) begin(w http.ResponseWriter, now time.Time) (loginTransaction, error) {
+func (t *loginTransactions) begin(w http.ResponseWriter, now time.Time, returnTo string) (loginTransaction, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for state, expiry := range t.pending {
@@ -65,7 +66,7 @@ func (t *loginTransactions) begin(w http.ResponseWriter, now time.Time) (loginTr
 	if len(t.pending) >= 4096 {
 		return loginTransaction{}, errors.New("login capacity reached")
 	}
-	tx := loginTransaction{State: randomToken(), Nonce: randomToken(), Verifier: randomToken(), Expires: now.Add(loginTTL)}
+	tx := loginTransaction{State: randomToken(), Nonce: randomToken(), Verifier: randomToken(), ReturnTo: returnTo, Expires: now.Add(loginTTL)}
 	plain, err := json.Marshal(tx)
 	if err != nil {
 		return loginTransaction{}, err
@@ -110,6 +111,10 @@ func clearLogin(w http.ResponseWriter) {
 }
 
 func (s *server) login(w http.ResponseWriter, r *http.Request) {
+	s.beginLogin(w, r, "/")
+}
+
+func (s *server) beginLogin(w http.ResponseWriter, r *http.Request, returnTo string) {
 	if allowed, retry := s.Limiter.Allow(auth.ClientIP(r), s.Now()); !allowed {
 		w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
 		http.Error(w, "Too many sign-in attempts. Please try again later.", http.StatusTooManyRequests)
@@ -119,7 +124,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Sign-in is temporarily unavailable.", http.StatusServiceUnavailable)
 		return
 	}
-	tx, err := s.transactions.begin(w, s.Now())
+	tx, err := s.transactions.begin(w, s.Now(), returnTo)
 	if err != nil {
 		http.Error(w, "Sign-in is temporarily unavailable.", http.StatusServiceUnavailable)
 		return
@@ -151,5 +156,5 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 			setCSRF(w, cookie.Expires)
 		}
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, tx.ReturnTo, http.StatusSeeOther)
 }

@@ -41,6 +41,7 @@ type Diagnostic struct {
 // Identity is the server-validated identity used for catalog visibility.
 type Identity struct {
 	Authenticated bool
+	DisplayName   string
 	Groups        map[string]struct{}
 	IsAdmin       bool
 }

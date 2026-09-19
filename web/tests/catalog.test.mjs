@@ -14,6 +14,22 @@ test('production-rendered portal declares a resolved theme contract on the docum
   await expect(page.locator('html')).toHaveAttribute('data-theme', /light|dark/);
 });
 
+test('production-rendered authenticated profile entry reaches the read-only profile page', async ({ page }) => {
+  await page.goto(`${baseURL}/__test/profile`);
+  const profile = page.getByRole('link', { name: 'Profile: Ada Lovelace' });
+  await expect(profile).toBeVisible();
+  const box = await profile.boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await profile.focus();
+  await expect(page.locator('#profile-preview')).toContainText('Ada Lovelace');
+  await profile.press('Enter');
+  await expect(page).toHaveURL(`${baseURL}/profile`);
+  await expect(page.getByRole('heading', { name: 'Ada Lovelace' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('portal-admin');
+});
+
 test('production-rendered portal resolves a first visit from the operating-system theme', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto(baseURL);

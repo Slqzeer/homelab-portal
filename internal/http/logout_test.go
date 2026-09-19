@@ -14,7 +14,7 @@ import (
 func TestLogoutRequiresSameOriginAndBrowserBoundCSRF(t *testing.T) {
 	f := newFixture(t)
 	f.store.Replace([]networkingv1.Ingress{ingress("Members", "authenticated", "")}, f.now)
-	w := f.request("GET", "/", f.cookie(t))
+	w := f.request("GET", "/profile", f.cookie(t))
 	match := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`).FindStringSubmatch(w.Body.String())
 	if len(match) != 2 {
 		t.Fatalf("missing logout CSRF form: %s", w.Body)
@@ -25,7 +25,7 @@ func TestLogoutRequiresSameOriginAndBrowserBoundCSRF(t *testing.T) {
 	if !csrfCookie.Secure || !csrfCookie.HttpOnly || csrfCookie.Path != "/" || csrfCookie.Domain != "" {
 		t.Fatalf("unsafe CSRF cookie: %v", csrfCookie)
 	}
-	other := f.request("GET", "/", f.cookie(t))
+	other := f.request("GET", "/profile", f.cookie(t))
 	otherCSRF := responseCookie(t, other, "__Host-portal_csrf")
 	for _, tc := range []struct {
 		name, origin, token string
@@ -76,11 +76,11 @@ func TestLogoutRequiresSameOriginAndBrowserBoundCSRF(t *testing.T) {
 
 func TestLogoutFormSurvivesSessionRefreshInAnotherTab(t *testing.T) {
 	f := newFixture(t)
-	w := f.request("GET", "/", f.cookie(t))
+	w := f.request("GET", "/profile", f.cookie(t))
 	token := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`).FindStringSubmatch(w.Body.String())[1]
 	csrf := responseCookie(t, w, "__Host-portal_csrf")
 	session := responseCookie(t, w, "__Host-portal_session")
-	w = f.request("GET", "/", session, csrf)
+	w = f.request("GET", "/profile", session, csrf)
 	session = responseCookie(t, w, "__Host-portal_session")
 	r := httptest.NewRequest("POST", "https://portal.example/auth/logout", strings.NewReader(url.Values{"csrf_token": {token}}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")

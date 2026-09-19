@@ -81,6 +81,7 @@ func New(options Options) (*Handlers, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /admin", s.admin)
+	mux.HandleFunc("GET /profile", s.profile)
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/callback", s.callback)
 	mux.HandleFunc("POST /auth/logout", s.logout)
@@ -118,6 +119,8 @@ func (s *server) home(w http.ResponseWriter, r *http.Request) {
 	if identity != nil {
 		data.Authenticated = identity.Authenticated
 		data.IsAdmin = identity.IsAdmin
+		data.DisplayName = identity.DisplayName
+		data.Initials = profileInitials(identity.DisplayName)
 		for _, cookie := range (&http.Response{Header: w.Header()}).Cookies() {
 			if cookie.Name == "__Host-portal_session" && cookie.MaxAge != -1 {
 				data.CSRFToken = s.csrfToken(w, r, cookie.Expires)
@@ -135,6 +138,21 @@ func (s *server) home(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(data.Categories)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = homeTemplate.Execute(w, data)
+}
+
+func (s *server) profile(w http.ResponseWriter, r *http.Request) {
+	now := s.Now()
+	identity := s.identity(w, r, now)
+	if identity == nil || !identity.Authenticated {
+		s.beginLogin(w, r, "/profile")
+		return
+	}
+	data := pageData{Authenticated: true, IsAdmin: identity.IsAdmin, DisplayName: identity.DisplayName, Initials: profileInitials(identity.DisplayName), Styles: s.styles}
+	for _, cookie := range (&http.Response{Header: w.Header()}).Cookies() {
+		if cookie.Name == "__Host-portal_session" && cookie.MaxAge != -1 { data.CSRFToken = s.csrfToken(w, r, cookie.Expires) }
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = profileTemplate.Execute(w, data)
 }
 
 func (s *server) identity(w http.ResponseWriter, r *http.Request, now time.Time) *catalog.Identity {

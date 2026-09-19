@@ -2,6 +2,8 @@ package portalhttp
 
 import (
 	"html/template"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/Slqzeer/homelab-portal/internal/catalog"
 )
@@ -11,6 +13,8 @@ type pageData struct {
 	Categories    []string
 	Stale         bool
 	Authenticated bool
+	DisplayName   string
+	Initials      string
 	IsAdmin       bool
 	CSRFToken     string
 	Styles        []string
@@ -20,7 +24,7 @@ var homeTemplate = template.Must(template.New("home").Parse(`<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Trusted links to intentionally published homelab services."><title>Homelab Portal</title><script src="/theme.js"></script>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head>
 <body><a class="skip-link" href="#main-content">Skip to content</a>
 <header class="site-header catalog-header"><p class="eyebrow catalog-header-label">Tailnet catalogue</p><nav class="identity-actions" aria-label="Account"><button class="button button-secondary theme-toggle" type="button" data-theme-toggle><span data-theme-toggle-icon aria-hidden="true">&#9789;</span><span data-theme-toggle-label>Switch to light theme</span></button>
-{{if .Authenticated}}<form action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">Sign out</button></form>{{else}}<a class="button button-secondary" href="/auth/login">Sign in</a>{{end}}
+{{if .Authenticated}}<span class="profile-entry"><a class="profile-link" href="/profile" aria-label="Profile: {{if .DisplayName}}{{.DisplayName}}{{else}}Signed-in user{{end}}" aria-describedby="profile-preview">{{.Initials}}</a><span id="profile-preview" class="profile-preview">{{if .DisplayName}}{{.DisplayName}}{{else}}Signed-in user{{end}}<br>Signed in.</span></span>{{else}}<a class="button button-secondary" href="/auth/login">Sign in</a>{{end}}
 {{if .IsAdmin}}<a class="button button-secondary" href="/admin">Admin diagnostics</a>{{end}}</nav></header>
 <main id="main-content" class="site-main" tabindex="-1"><div class="catalog-shell"><aside class="catalog-information-rail" aria-labelledby="portal-title"><h1 id="portal-title">Homelab Portal</h1><p class="eyebrow">Available to you</p><h2>Service catalogue</h2><p>Open an intentionally published service. Each target application manages its own access.</p>
 <p class="catalog-status" data-catalog-status role="status" aria-live="polite" aria-atomic="true">{{len .Items}} catalog {{if eq (len .Items) 1}}item{{else}}items{{end}}</p>
@@ -39,8 +43,19 @@ var adminTemplate = template.Must(template.New("admin").Parse(`<!doctype html>
 {{range .Diagnostics}}<tr><td>{{.Namespace}}</td><td>{{.Ingress}}</td><td>{{.Rule}}</td><td>{{.Remediation}}</td></tr>{{end}}
 </tbody></table></div></main></body></html>`))
 
+var profileTemplate = template.Must(template.New("profile").Parse(`<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Profile · Homelab Portal</title><script src="/theme.js"></script>{{range .Styles}}<link rel="stylesheet" href="{{.}}">{{end}}</head><body><a class="skip-link" href="#main-content">Skip to content</a><header class="site-header"><p class="eyebrow">Account</p><nav class="identity-actions" aria-label="Account"><a class="button button-secondary" href="/">Back to catalogue</a>{{if .IsAdmin}}<a class="button button-secondary" href="/admin">Admin diagnostics</a>{{end}}</nav></header><main id="main-content" class="site-main" tabindex="-1"><h1>{{if .DisplayName}}{{.DisplayName}}{{else}}Signed-in user{{end}}</h1><p>Signed in.</p><form action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="button button-secondary" type="submit">Sign out</button></form></main></body></html>`))
+
 type adminData struct {
 	Diagnostics []catalog.Diagnostic
 	Watcher     string
 	Styles      []string
+}
+
+func profileInitials(name string) string {
+	fields := strings.Fields(name)
+	if len(fields) == 0 { return "?" }
+	first, _ := utf8.DecodeRuneInString(fields[0])
+	if len(fields) == 1 { return string(first) }
+	last, _ := utf8.DecodeRuneInString(fields[len(fields)-1])
+	return string(first) + string(last)
 }

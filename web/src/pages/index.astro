@@ -24,6 +24,7 @@ const categories = [...new Set(items.map((item) => item.category))].sort();
       <p class="eyebrow catalog-header-label">Homelab Portal</p>
       <nav class="identity-actions" aria-label="Account">
         <button class="button button-secondary theme-toggle" type="button" data-theme-toggle><span data-theme-toggle-icon aria-hidden="true">&#9789;</span><span data-theme-toggle-label>Switch to light theme</span></button>
+        {import.meta.env.DEV && <a class="button button-secondary" href="/login">Sign in (development preview)</a>}
         {import.meta.env.DEV && <a class="button button-secondary" href="/admin">Admin diagnostics</a>}
       </nav>
     </header>

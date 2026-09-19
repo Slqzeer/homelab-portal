@@ -71,6 +71,13 @@ func main() {
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
+	mux.HandleFunc("GET /__test/profile", func(w http.ResponseWriter, r *http.Request) {
+		if err := sessions.Create(w, auth.Claims{DisplayName: "Ada Lovelace"}, now); err != nil {
+			http.Error(w, "could not create test session", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
 	mux.HandleFunc("GET /__test/stale", func(w http.ResponseWriter, r *http.Request) {
 		request := r.Clone(r.Context())
 		request.URL.Path = "/"

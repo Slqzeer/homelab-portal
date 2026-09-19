@@ -7,6 +7,8 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Slqzeer/homelab-portal/internal/config"
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -74,7 +76,24 @@ func (o *OIDC) Callback(ctx context.Context, params CallbackParams) (Claims, err
 		}
 		groups = append(groups, group)
 	}
-	return Claims{Groups: groups}, nil
+	return Claims{Groups: groups, DisplayName: normalizedDisplayName(payload["name"])}, nil
+}
+
+func normalizedDisplayName(raw json.RawMessage) string {
+	var value string
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	value = strings.TrimSpace(value)
+	if value == "" || utf8.RuneCountInString(value) > 120 {
+		return ""
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return value
 }
 
 func NewOIDC(ctx context.Context, cfg config.Config) (*OIDC, error) {

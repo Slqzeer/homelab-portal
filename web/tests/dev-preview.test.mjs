@@ -10,6 +10,16 @@ test('developer preview exposes a labelled decorative theme control', async ({ p
   await expect(toggle.locator('[data-theme-toggle-label]')).toHaveText('Switch to dark theme');
 });
 
+test('developer preview exposes fake sign-in and profile destinations without authenticating', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'Sign in (development preview)' })).toHaveAttribute('href', '/login');
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Sign-in preview' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue as Ada Lovelace' })).toHaveAttribute('href', '/profile');
+  await page.goto('/profile');
+  await expect(page.getByRole('heading', { name: 'Ada Lovelace' })).toBeVisible();
+});
+
 test('developer can preview and filter realistic catalogue states with live reload enabled', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const response = await page.goto('/');

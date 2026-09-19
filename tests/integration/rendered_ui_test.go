@@ -57,16 +57,16 @@ func TestRenderedCatalogKeepsIdentityAndFilteringAtTheBFFBoundary(t *testing.T) 
 		`href="/auth/login"`,
 	)
 	assertThemeInitializer(t, anonymous)
-	assertContainsNone(t, anonymous, "Secret Admin", "Private operations", "secret-admin.tail.example", ">Sign out<", `href="/admin"`)
+	assertContainsNone(t, anonymous, "Secret Admin", "Private operations", "secret-admin.tail.example", ">Sign out<", `href="/admin"`, `href="/profile"`)
 
 	authenticatedCookie := sessionCookie(t, sessions, now)
 	authenticated := renderHome(t, handler, authenticatedCookie)
-	assertContainsAll(t, authenticated, `>Sign out<`)
+	assertContainsAll(t, authenticated, `href="/profile"`, `Profile: Signed-in user`, `Signed in.`)
 	assertContainsNone(t, authenticated, `>Sign in<`, `href="/admin"`, "Secret Admin", "secret-admin.tail.example")
 
 	adminCookie := sessionCookie(t, sessions, now, "portal-admin")
 	admin := renderHome(t, handler, adminCookie)
-	assertContainsAll(t, admin, `>Sign out<`, `href="/admin"`, "Secret Admin", "https://secret-admin.tail.example", `src="/icons/generic.svg"`)
+	assertContainsAll(t, admin, `href="/profile"`, `href="/admin"`, "Secret Admin", "https://secret-admin.tail.example", `src="/icons/generic.svg"`)
 	assertContainsNone(t, admin, `>Sign in<`)
 
 	adminPage := serve(t, handler, http.MethodGet, "/admin", adminCookie)

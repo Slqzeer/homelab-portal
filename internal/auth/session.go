@@ -19,13 +19,17 @@ const sessionCookieName = "__Host-portal_session"
 
 // Claims contains only the verified authorization facts needed by the portal.
 // OAuth tokens and subject/profile identifiers deliberately have no representation.
-type Claims struct{ Groups []string }
+type Claims struct {
+	Groups      []string
+	DisplayName string
+}
 
 var ErrInvalidSession = errors.New("invalid portal session")
 
 type session struct {
 	Authenticated bool     `json:"authenticated"`
 	Groups        []string `json:"groups"`
+	DisplayName   string   `json:"display_name"`
 	Issued        int64    `json:"issued"`
 	LastSeen      int64    `json:"last_seen"`
 	Expires       int64    `json:"expires"`
@@ -59,7 +63,7 @@ func NewSessionManager(current, previous []byte) (*SessionManager, error) {
 }
 
 func (m *SessionManager) Create(w http.ResponseWriter, claims Claims, now time.Time) error {
-	s := session{Authenticated: true, Groups: claims.Groups, Issued: now.Unix(), LastSeen: now.Unix(), Expires: now.Add(4 * time.Hour).Unix()}
+	s := session{Authenticated: true, Groups: claims.Groups, DisplayName: claims.DisplayName, Issued: now.Unix(), LastSeen: now.Unix(), Expires: now.Add(4 * time.Hour).Unix()}
 	return m.write(w, s)
 }
 
@@ -87,7 +91,7 @@ func (m *SessionManager) Load(r *http.Request, now time.Time) (*catalog.Identity
 	if err != nil || s == nil {
 		return nil, err
 	}
-	identity := &catalog.Identity{Authenticated: s.Authenticated, Groups: make(map[string]struct{}, len(s.Groups))}
+	identity := &catalog.Identity{Authenticated: s.Authenticated, DisplayName: s.DisplayName, Groups: make(map[string]struct{}, len(s.Groups))}
 	for _, group := range s.Groups {
 		identity.Groups[group] = struct{}{}
 	}
