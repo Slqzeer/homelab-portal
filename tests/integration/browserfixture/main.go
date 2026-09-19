@@ -51,6 +51,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	staleStore := catalog.NewStore(types.NamespacedName{Namespace: "portal", Name: "portal"})
+	staleStore.Replace([]networkingv1.Ingress{
+		publishedIngress("grafana", "Grafana", "Dashboards and visualizations", "Monitoring", "public", "grafana"),
+	}, now.Add(-3*time.Minute))
+	stalePortal, err := portalhttp.New(portalhttp.Options{
+		Store: staleStore, Sessions: sessions, Assets: assets.FS(), BaseURL: "https://" + address,
+		Now: func() time.Time { return now }, Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__test/admin", func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +70,11 @@ func main() {
 			return
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+	mux.HandleFunc("GET /__test/stale", func(w http.ResponseWriter, r *http.Request) {
+		request := r.Clone(r.Context())
+		request.URL.Path = "/"
+		stalePortal.ServeHTTP(w, request)
 	})
 	mux.Handle("/", portal)
 

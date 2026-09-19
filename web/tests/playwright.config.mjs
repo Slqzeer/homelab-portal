@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'catalog.test.mjs',
+  testMatch: ['catalog.test.mjs', 'theme-preferences.test.mjs'],
   outputDir: '../.astro/test-results',
   reporter: 'line',
   webServer: {
