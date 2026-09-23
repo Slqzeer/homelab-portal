@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate release and approval protection
+      - name: Validate release and production tag policy
         id: prepare
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Approved immutable GitOps handoff
+      - name: Summarize immutable digest for owner review
         env:
           IMAGE: ${{ needs.release.outputs.image }}
           DIGEST: ${{ needs.release.outputs.digest }}

@@ -213,12 +213,12 @@ func TestReleaseImmutableSupplyChain(t *testing.T) {
 	require.Equal(t, "${{ steps.build.outputs.digest }}", provenance.With["subject-digest"])
 	require.Equal(t, "true", provenance.With["push-to-registry"])
 	require.Equal(t, "${{ steps.build.outputs.digest }}", job.Outputs["digest"])
-	approval := w.Jobs["promotion"]
-	require.Equal(t, []string{"release"}, approval.Needs)
-	require.Equal(t, "production", approval.Environment)
-	require.Equal(t, map[string]string{"contents": "read", "actions": "read"}, approval.Permissions)
-	i := stepRunning(t, approval, "bash scripts/release.sh instructions")
-	require.Equal(t, "${{ needs.release.outputs.digest }}", approval.Steps[i].Env["DIGEST"])
+	promotion := w.Jobs["promotion"]
+	require.Equal(t, []string{"release"}, promotion.Needs)
+	require.Equal(t, "production", promotion.Environment)
+	require.Equal(t, map[string]string{"contents": "read", "actions": "read"}, promotion.Permissions)
+	i := stepRunning(t, promotion, "bash scripts/release.sh instructions")
+	require.Equal(t, "${{ needs.release.outputs.digest }}", promotion.Steps[i].Env["DIGEST"])
 	_, artifact := stepUsing(t, job, "actions/upload-artifact")
 	require.Equal(t, "always()", artifact.If)
 	require.Equal(t, "reports/", artifact.With["path"])

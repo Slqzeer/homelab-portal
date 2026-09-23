@@ -67,7 +67,7 @@ case "${1:-}" in
   instructions)
     validate_digest
     check_deployment_policy
-    # This mode is invoked only by the production environment-gated job.
+    # This mode runs in the production job and rechecks its deployment tag policy.
     printf 'Release evidence ready for owner review\nImage: %s\nApplication Git revision: %s\n' "$ref" "$GITHUB_SHA" |
       tee -a "${GITHUB_STEP_SUMMARY:?}"
     printf '%s\n' \
