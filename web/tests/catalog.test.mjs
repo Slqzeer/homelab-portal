@@ -392,7 +392,7 @@ test('production-rendered admin identity receives its authorized card set', asyn
   await expect(page.locator('.catalog-main')).toBeVisible();
   await expect(page.locator('aside.catalog-information-rail').getByRole('link')).toHaveCount(0);
   await expect(page.locator('header.site-header').getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Profile: Signed-in user' })).toHaveAttribute('href', '/profile');
   await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(visibleArticles(page)).toHaveCount(5);
   await expect(page.getByRole('article').filter({ hasText: 'Secret Admin' })).toBeVisible();
