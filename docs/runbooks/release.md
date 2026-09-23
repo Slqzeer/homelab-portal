@@ -55,7 +55,10 @@ docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Manifest}}' | jq
     any($index.manifests[]?;
       .annotations."vnd.docker.reference.type" == "attestation-manifest" and
       .annotations."vnd.docker.reference.digest" == $images[0]))'
-docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Provenance.SLSA}}' | jq -e '.buildType == "https://mobyproject.org/buildkit@v1"'
+docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Provenance}}' | jq -e '
+  . as $provenance |
+  all(["linux/amd64", "linux/arm64"][]; . as $platform |
+    $provenance[$platform].SLSA.buildType == "https://mobyproject.org/buildkit@v1")'
 ```
 
 Stop on any nonzero exit. Compare the freshly fetched index with `image-index.json`; verify each `linux/amd64` and `linux/arm64` descriptor has an `attestation-manifest` whose `vnd.docker.reference.digest` matches that platform digest. Inspect BuildKit's SLSA provenance and build log for the expected source repository, commit, run identity, and both platforms; an attestation-manifest link alone does not prove predicate contents. Inspect the verified Cosign attestation subjects/predicates and match both platform SBOMs to the downloaded files; do not accept a different workflow identity or arbitrary issuer. The signed multi-platform index digest commits to its child platform and BuildKit attestation manifests.
