@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ../../base
 patches:
+  - path: namespace-delete-patch.yaml
   - path: image-patch.yaml
   # Non-secret site configuration. These example addresses intentionally
   # cannot reach a real API. Set exact VIP/endpoint /32s (or IPv6 /128s).

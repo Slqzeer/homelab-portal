@@ -22,11 +22,15 @@ import (
 // The seam is the deployable output, so patches and namespace transformations
 // are exercised as well as the base. kubectl embeds the same Kustomize engine.
 func render(t *testing.T) []unstructured.Unstructured {
+	return renderPath(t, "deploy/overlays/homelab")
+}
+
+func renderPath(t *testing.T, path string) []unstructured.Unstructured {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(file), "..", "..")
 	tool, err := exec.LookPath("kustomize")
-	args := []string{"build", "deploy/overlays/homelab"}
+	args := []string{"build", path}
 	if err != nil {
 		tool, err = exec.LookPath("kubectl")
 		args[0] = "kustomize"
@@ -212,7 +216,14 @@ func TestPortalRunsWithinRestrictedResourceBoundary(t *testing.T) {
 		require.NotEqual(t, "Ingress", object.GetKind(), "all exposure, including operational paths, belongs to external GitOps")
 	}
 	require.Equal(t, 1, deploymentCount)
-	namespace := decode[corev1.Namespace](t, objectOf(t, objects, "Namespace", "portal"))
+}
+
+func TestProductionOverlayDelegatesNamespaceToBootstrap(t *testing.T) {
+	for _, object := range render(t) {
+		require.NotEqual(t, "Namespace", object.GetKind(), "production bootstrap owns Namespace/portal")
+	}
+	base := renderPath(t, "deploy/base")
+	namespace := decode[corev1.Namespace](t, objectOf(t, base, "Namespace", "portal"))
 	require.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
 	require.Equal(t, "v1.36", namespace.Labels["pod-security.kubernetes.io/enforce-version"])
 }

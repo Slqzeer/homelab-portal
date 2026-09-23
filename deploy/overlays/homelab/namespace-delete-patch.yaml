@@ -1,0 +1,6 @@
+# The homelab bootstrap owns Namespace/portal.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portal
+$patch: delete
