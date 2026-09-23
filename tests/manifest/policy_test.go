@@ -201,7 +201,8 @@ func TestPortalRunsWithinRestrictedResourceBoundary(t *testing.T) {
 	require.Equal(t, []corev1.Capability{"ALL"}, container.SecurityContext.Capabilities.Drop)
 	require.Empty(t, container.SecurityContext.Capabilities.Add)
 	require.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, container.SecurityContext.SeccompProfile.Type)
-	require.Regexp(t, `^registry\.example/homelab-portal@sha256:[a-f0-9]{64}$`, container.Image)
+	require.Equal(t, approvedProductionImage, container.Image, "production overlay must render the reviewed release")
+	require.True(t, immutableProductionImage(container.Image), "production image needs a unique build tag and nonzero digest")
 	for _, volume := range pod.Volumes {
 		require.Nil(t, volume.PersistentVolumeClaim)
 		require.Nil(t, volume.HostPath)

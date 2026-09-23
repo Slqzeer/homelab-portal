@@ -1,4 +1,4 @@
-# Replace this deliberately non-deployable placeholder with an approved digest.
+# Reviewed release run 35928856825, attempt 1; deploy the immutable index digest.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,4 +8,4 @@ spec:
     spec:
       containers:
         - name: portal
-          image: registry.example/homelab-portal@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/slqzeer/homelab-portal:sha-5fa18953191ebd1e0b9482a72f649a18900f77b4-35928856825-1@sha256:b6a815c29106a88472313239d621aa851ec795d8713949454934982685b8b663
