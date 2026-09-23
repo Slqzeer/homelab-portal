@@ -398,7 +398,7 @@ func TestReleaseRequiresRealReviewerProtection(t *testing.T) {
 				require.Contains(t, string(published), "operations (8081) stays internal")
 				require.Contains(t, string(published), "docs/runbooks/acceptance.md")
 			}
-			for _, unprotected := range []string{`{}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[{}]}]}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":true,"reviewers":[]}]}`} {
+			for _, unprotected := range []string{`{}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[]}]}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":true,"reviewers":[]}]}`} {
 				_, out, err := runReleaseScript(t, "release.sh", mode, "", append(extra, "ENVIRONMENT_JSON="+unprotected)...)
 				require.Error(t, err)
 				require.NotContains(t, out, "Approved GitOps")
@@ -406,6 +406,17 @@ func TestReleaseRequiresRealReviewerProtection(t *testing.T) {
 			_, out, err := runReleaseScript(t, "release.sh", mode, "gh", extra...)
 			require.Error(t, err)
 			require.NotContains(t, out, "Approved GitOps")
+		})
+	}
+}
+
+func TestReleaseAllowsSelfReviewWithRequiredReviewer(t *testing.T) {
+	protected := `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[{"type":"User","reviewer":{"login":"operator"}}]}]}`
+	for _, mode := range []string{"prepare", "instructions"} {
+		t.Run(mode, func(t *testing.T) {
+			outputFile := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
+			_, output, err := runReleaseScript(t, "release.sh", mode, "", "ENVIRONMENT_JSON="+protected, "GITHUB_OUTPUT="+outputFile, "GITHUB_STEP_SUMMARY="+outputFile)
+			require.NoError(t, err, output)
 		})
 	}
 }

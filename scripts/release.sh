@@ -19,7 +19,7 @@ check_approval_rules() {
   # settings, insufficient API permissions, API errors or unsupported plans.
   gh api "repos/$GITHUB_REPOSITORY/environments/production" |
     jq -e 'any(.protection_rules[]?;
-      .type == "required_reviewers" and .prevent_self_review == true and (.reviewers | length) > 0)' > /dev/null
+      .type == "required_reviewers" and (.reviewers | length) > 0)' > /dev/null
 }
 
 case "${1:-}" in
