@@ -195,7 +195,7 @@ func TestReleaseImmutableSupplyChain(t *testing.T) {
 	require.Equal(t, "./.github/workflows/test.yaml", w.Jobs["test"].Uses)
 	job := w.Jobs["release"]
 	require.Equal(t, []string{"test"}, job.Needs)
-	require.Equal(t, map[string]string{"contents": "read", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write"}, job.Permissions)
+	require.Equal(t, map[string]string{"contents": "read", "actions": "read", "packages": "write", "id-token": "write"}, job.Permissions)
 	preflight := stepRunning(t, job, "bash scripts/release.sh prepare")
 	_, login := stepUsing(t, job, "docker/login-action")
 	require.Equal(t, "${{ secrets.GITHUB_TOKEN }}", login.With["password"])
@@ -204,14 +204,14 @@ func TestReleaseImmutableSupplyChain(t *testing.T) {
 	require.Greater(t, buildIndex, preflight)
 	require.Equal(t, "linux/amd64,linux/arm64", build.With["platforms"])
 	require.Equal(t, "true", build.With["push"])
+	require.Equal(t, "mode=max", build.With["provenance"])
 	require.Equal(t, "${{ steps.prepare.outputs.tag }}", build.With["tags"])
 	evidence := stepRunning(t, job, "bash scripts/release.sh seal")
 	require.Greater(t, evidence, buildIndex)
 	require.Equal(t, "${{ steps.build.outputs.digest }}", job.Steps[evidence].Env["DIGEST"])
-	provenanceIndex, provenance := stepUsing(t, job, "actions/attest-build-provenance")
-	require.Greater(t, provenanceIndex, evidence)
-	require.Equal(t, "${{ steps.build.outputs.digest }}", provenance.With["subject-digest"])
-	require.Equal(t, "true", provenance.With["push-to-registry"])
+	for _, step := range job.Steps {
+		require.NotContains(t, step.Uses, "attest-build-provenance")
+	}
 	require.Equal(t, "${{ steps.build.outputs.digest }}", job.Outputs["digest"])
 	promotion := w.Jobs["promotion"]
 	require.Equal(t, []string{"release"}, promotion.Needs)
@@ -275,6 +275,7 @@ if [[ "$name" == syft ]]; then
   done
 fi
 if [[ "$name" == kustomize ]]; then printf 'kind: Deployment\n'; fi
+if [[ "$name" == docker && "${1:-}" == buildx && "${2:-}" == imagetools && "${3:-}" == inspect ]]; then printf '%s\n' "$INDEX_JSON"; fi
 if [[ "$name" == git && "${1:-}" == rev-parse ]]; then printf '%s\n' "$GITHUB_SHA"; fi
 if [[ "$name" == gh ]]; then
   if [[ "$*" == "api repos/$GITHUB_REPOSITORY/environments/production" ]]; then
@@ -286,7 +287,7 @@ if [[ "$name" == gh ]]; then
   fi
 fi
 `
-	for _, tool := range []string{"syft", "trivy", "cosign", "npm", "npx", "go", "git", "kustomize", "kubeconform", "actionlint", "shellcheck", "gh"} {
+	for _, tool := range []string{"syft", "trivy", "cosign", "npm", "npx", "go", "git", "kustomize", "kubeconform", "actionlint", "shellcheck", "gh", "docker"} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "fake", tool), []byte(stub), 0755))
 	}
 	trace := filepath.Join(dir, "trace")
@@ -296,6 +297,7 @@ fi
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "FAKE_BIN="+filepath.ToSlash(filepath.Join(dir, "fake")), "SCRIPT=scripts/"+script, "MODE="+mode,
 		"TRACE="+filepath.ToSlash(trace), "FAIL_TOOL="+failure,
+		"INDEX_JSON="+validReleaseIndex(),
 		"IMAGE=ghcr.io/example/portal", "DIGEST=sha256:"+strings.Repeat("a", 64),
 		"GITHUB_REPOSITORY=example/portal", "GITHUB_REF=refs/tags/v1.2.3", "GITHUB_SHA="+strings.Repeat("b", 40),
 		"GITHUB_RUN_ID=123", "GITHUB_RUN_ATTEMPT=1")
@@ -307,6 +309,15 @@ fi
 	}
 	log, _ := os.ReadFile(trace)
 	return string(log), string(out), runErr
+}
+func validReleaseIndex() string {
+	amd64 := "sha256:" + strings.Repeat("c", 64)
+	arm64 := "sha256:" + strings.Repeat("d", 64)
+	return `{"digest":"sha256:` + strings.Repeat("a", 64) + `","manifests":[` +
+		`{"digest":"` + amd64 + `","platform":{"os":"linux","architecture":"amd64"}},` +
+		`{"digest":"` + arm64 + `","platform":{"os":"linux","architecture":"arm64"}},` +
+		`{"digest":"sha256:` + strings.Repeat("e", 64) + `","platform":{"os":"unknown","architecture":"unknown"},"annotations":{"vnd.docker.reference.type":"attestation-manifest","vnd.docker.reference.digest":"` + amd64 + `"}},` +
+		`{"digest":"sha256:` + strings.Repeat("f", 64) + `","platform":{"os":"unknown","architecture":"unknown"},"annotations":{"vnd.docker.reference.type":"attestation-manifest","vnd.docker.reference.digest":"` + arm64 + `"}}]}`
 }
 
 func TestReleaseSourceVerificationExecutesRequiredChecks(t *testing.T) {
@@ -349,6 +360,7 @@ func TestReleaseSealScansBothPlatformsBeforeSigningDigest(t *testing.T) {
 		"trivy|image|--image-src|remote|--platform|linux/amd64|--scanners|vuln|--severity|HIGH,CRITICAL|--ignorefile|/dev/null|--exit-code|1|--format|json|--output|reports/trivy-amd64.json|" + ref,
 		"syft|registry:" + ref + "|--platform|linux/arm64|-o|cyclonedx-json=reports/sbom-arm64.cdx.json|-o|spdx-json=reports/sbom-arm64.spdx.json",
 		"trivy|image|--image-src|remote|--platform|linux/arm64|--scanners|vuln|--severity|HIGH,CRITICAL|--ignorefile|/dev/null|--exit-code|1|--format|json|--output|reports/trivy-arm64.json|" + ref,
+		"docker|buildx|imagetools|inspect|" + ref + "|--format|{{json .Manifest}}",
 		"cosign|sign|--yes|" + ref,
 		"cosign|attest|--yes|--type|cyclonedx|--predicate|reports/sbom-amd64.cdx.json|" + ref,
 		"cosign|attest|--yes|--type|spdxjson|--predicate|reports/sbom-amd64.spdx.json|" + ref,
@@ -369,7 +381,7 @@ func TestReleaseSealScansBothPlatformsBeforeSigningDigest(t *testing.T) {
 			require.Equal(t, expected[:index+1], strings.Split(strings.TrimSpace(failedLog), "\n"))
 		})
 	}
-	for _, tool := range []string{"syft", "trivy", "cosign"} {
+	for _, tool := range []string{"syft", "trivy", "cosign", "docker"} {
 		t.Run(tool+" failure blocks release", func(t *testing.T) {
 			log, out, err := runReleaseScript(t, "release.sh", "seal", tool)
 			require.Error(t, err)
@@ -383,6 +395,18 @@ func TestReleaseSealScansBothPlatformsBeforeSigningDigest(t *testing.T) {
 		log, _, err := runReleaseScript(t, "release.sh", "seal", "", "DIGEST="+badDigest)
 		require.Error(t, err)
 		require.Empty(t, log, "invalid inputs must fail before external calls")
+	}
+	for name, index := range map[string]string{
+		"missing index":          `{}`,
+		"wrong index digest":     strings.Replace(validReleaseIndex(), `"digest":"sha256:`+strings.Repeat("a", 64)+`"`, `"digest":"sha256:`+strings.Repeat("b", 64)+`"`, 1),
+		"missing arm provenance": strings.Replace(validReleaseIndex(), `"vnd.docker.reference.digest":"sha256:`+strings.Repeat("d", 64)+`"`, `"vnd.docker.reference.digest":"sha256:`+strings.Repeat("c", 64)+`"`, 1),
+		"wrong attestation type": strings.ReplaceAll(validReleaseIndex(), `"vnd.docker.reference.type":"attestation-manifest"`, `"vnd.docker.reference.type":"other"`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			log, _, err := runReleaseScript(t, "release.sh", "seal", "", "INDEX_JSON="+index)
+			require.Error(t, err)
+			require.NotContains(t, log, "cosign|sign")
+		})
 	}
 }
 

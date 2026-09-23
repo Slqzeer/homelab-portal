@@ -52,6 +52,24 @@ case "${1:-}" in
         --severity HIGH,CRITICAL --ignorefile /dev/null --exit-code 1 \
         --format json --output "reports/trivy-$arch.json" "$ref"
     done
+    # BuildKit mode=max provenance is attached to each platform in the pushed
+    # index. Verify those links before signing the immutable index digest.
+    docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' > reports/image-index.json
+    jq -e --arg digest "$DIGEST" '
+      . as $index |
+      $index.digest == $digest and
+      all(["amd64", "arm64"][]; . as $arch |
+        [$index.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] as $images |
+        ($images | length) == 1 and
+        ($images[0] | test("^sha256:[a-f0-9]{64}$")) and
+        any($index.manifests[]?;
+          .platform.os == "unknown" and .platform.architecture == "unknown" and
+          .annotations."vnd.docker.reference.type" == "attestation-manifest" and
+          .annotations."vnd.docker.reference.digest" == $images[0] and
+          (.digest | test("^sha256:[a-f0-9]{64}$"))
+        )
+      )
+    ' reports/image-index.json > /dev/null || fail 'Image index digest or platform attestation manifest mismatch'
     cosign sign --yes "$ref"
     for arch in amd64 arm64; do
       cosign attest --yes --type cyclonedx --predicate "reports/sbom-$arch.cdx.json" "$ref"
