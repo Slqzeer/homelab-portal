@@ -14,12 +14,16 @@ validate_digest() {
   [[ "${DIGEST:-}" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Release requires an immutable sha256 digest'
   ref="$IMAGE@$DIGEST"
 }
-check_approval_rules() {
-  # A named environment alone does not require approval. Fail closed on missing
-  # settings, insufficient API permissions, API errors or unsupported plans.
+check_deployment_policy() {
+  # A named environment alone does not restrict deployment tags. Fail closed on
+  # missing settings, policy list errors, or insufficient API permissions.
   gh api "repos/$GITHUB_REPOSITORY/environments/production" |
-    jq -e 'any(.protection_rules[]?;
-      .type == "required_reviewers" and (.reviewers | length) > 0)' > /dev/null
+    jq -e '.name == "production" and
+      .deployment_branch_policy.custom_branch_policies == true and
+      .deployment_branch_policy.protected_branches == false' > /dev/null
+  gh api --paginate "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies?per_page=100" |
+    jq -se 'all(.[]; (.branch_policies | type) == "array") and
+      any(.[]; any(.branch_policies[]; .name == "v*" and .type == "tag"))' > /dev/null
 }
 
 case "${1:-}" in
@@ -27,7 +31,7 @@ case "${1:-}" in
     validate_source
     [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || fail 'Checkout does not match the release commit'
     [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ && "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]] || fail 'Missing unique run identity'
-    check_approval_rules
+    check_deployment_policy
     image="ghcr.io/${GITHUB_REPOSITORY,,}"
     # Every run attempt gets a new tag; tags are never promotion inputs.
     tag="$image:sha-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -62,11 +66,12 @@ case "${1:-}" in
     ;;
   instructions)
     validate_digest
-    check_approval_rules
+    check_deployment_policy
     # This mode is invoked only by the production environment-gated job.
-    printf 'Approved GitOps handoff\nImage: %s\nApplication Git revision: %s\n' "$ref" "$GITHUB_SHA" |
+    printf 'Release evidence ready for owner review\nImage: %s\nApplication Git revision: %s\n' "$ref" "$GITHUB_SHA" |
       tee -a "${GITHUB_STEP_SUMMARY:?}"
     printf '%s\n' \
+      'Owner must review release evidence before GitOps promotion.' \
       'Open a reviewed GitOps change pinning exactly this image digest and application revision.' \
       'Ingress backend: Service port public (8080) only; operations (8081) stays internal. Apply the matching ConfigMap, Service, probes, ServiceMonitor and NetworkPolicy changes together.' \
       'Retain a passing isolated live report from docs/runbooks/acceptance.md before promotion.' \

@@ -276,7 +276,15 @@ if [[ "$name" == syft ]]; then
 fi
 if [[ "$name" == kustomize ]]; then printf 'kind: Deployment\n'; fi
 if [[ "$name" == git && "${1:-}" == rev-parse ]]; then printf '%s\n' "$GITHUB_SHA"; fi
-if [[ "$name" == gh ]]; then printf '%s\n' "$ENVIRONMENT_JSON"; fi
+if [[ "$name" == gh ]]; then
+  if [[ "$*" == "api repos/$GITHUB_REPOSITORY/environments/production" ]]; then
+    printf '%s\n' "$ENVIRONMENT_JSON"
+  elif [[ "$*" == "api --paginate repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies?per_page=100" ]]; then
+    printf '%s\n' "$POLICIES_JSON"
+  else
+    exit 22
+  fi
+fi
 `
 	for _, tool := range []string{"syft", "trivy", "cosign", "npm", "npx", "go", "git", "kustomize", "kubeconform", "actionlint", "shellcheck", "gh"} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "fake", tool), []byte(stub), 0755))
@@ -378,45 +386,58 @@ func TestReleaseSealScansBothPlatformsBeforeSigningDigest(t *testing.T) {
 	}
 }
 
-func TestReleaseRequiresRealReviewerProtection(t *testing.T) {
-	protected := `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":true,"reviewers":[{"type":"User","reviewer":{"login":"operator"}}]}]}`
+func TestReleaseRequiresProductionTagPolicy(t *testing.T) {
+	environment := `{"name":"production","protection_rules":[],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}`
+	policies := `{"total_count":1,"branch_policies":[{"id":1,"name":"v*","type":"tag"}]}`
 	for _, mode := range []string{"prepare", "instructions"} {
 		t.Run(mode, func(t *testing.T) {
 			outputFile := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
-			extra := []string{"ENVIRONMENT_JSON=" + protected, "GITHUB_OUTPUT=" + outputFile, "GITHUB_STEP_SUMMARY=" + outputFile}
+			extra := []string{"ENVIRONMENT_JSON=" + environment, "POLICIES_JSON=" + policies, "GITHUB_OUTPUT=" + outputFile, "GITHUB_STEP_SUMMARY=" + outputFile}
 			log, output, err := runReleaseScript(t, "release.sh", mode, "", extra...)
 			require.NoError(t, err, output)
-			require.Contains(t, log, "gh|api|repos/example/portal/environments/production")
+			require.Contains(t, log, "gh|api|repos/example/portal/environments/production\n")
+			require.Contains(t, log, "gh|api|--paginate|repos/example/portal/environments/production/deployment-branch-policies?per_page=100\n")
 			published, err := os.ReadFile(outputFile)
 			require.NoError(t, err)
 			if mode == "prepare" {
 				require.Contains(t, string(published), "tag=ghcr.io/example/portal:sha-"+strings.Repeat("b", 40)+"-123-1")
 			} else {
+				require.Contains(t, string(published), "Release evidence ready for owner review")
+				require.Contains(t, string(published), "Owner must review release evidence before GitOps promotion.")
 				require.Contains(t, string(published), "ghcr.io/example/portal@sha256:"+strings.Repeat("a", 64))
 				require.NotContains(t, string(published), ":latest")
 				require.Contains(t, string(published), "Ingress backend: Service port public (8080) only")
 				require.Contains(t, string(published), "operations (8081) stays internal")
 				require.Contains(t, string(published), "docs/runbooks/acceptance.md")
 			}
-			for _, unprotected := range []string{`{}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[]}]}`, `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":true,"reviewers":[]}]}`} {
-				_, out, err := runReleaseScript(t, "release.sh", mode, "", append(extra, "ENVIRONMENT_JSON="+unprotected)...)
+			for _, invalid := range []string{
+				`{}`,
+				`{"name":"production","deployment_branch_policy":null}`,
+				`{"name":"production","deployment_branch_policy":{"protected_branches":true,"custom_branch_policies":false}}`,
+				`{"name":"production","deployment_branch_policy":{"protected_branches":true,"custom_branch_policies":true}}`,
+			} {
+				log, out, err := runReleaseScript(t, "release.sh", mode, "", append(extra, "ENVIRONMENT_JSON="+invalid)...)
 				require.Error(t, err)
-				require.NotContains(t, out, "Approved GitOps")
+				require.NotContains(t, log, "deployment-branch-policies")
+				require.NotContains(t, out, "Release evidence ready")
+			}
+			for _, invalid := range []string{
+				`{}`,
+				`{"total_count":0,"branch_policies":[]}`,
+				`{"total_count":1,"branch_policies":[{"name":"v*","type":"branch"}]}`,
+				`{"total_count":1,"branch_policies":[{"name":"v1.*","type":"tag"}]}`,
+				`{"total_count":1,"branch_policies":[{"name":"v*"}]}`,
+			} {
+				_, out, err := runReleaseScript(t, "release.sh", mode, "", append(extra, "POLICIES_JSON="+invalid)...)
+				require.Error(t, err)
+				require.NotContains(t, out, "Release evidence ready")
 			}
 			_, out, err := runReleaseScript(t, "release.sh", mode, "gh", extra...)
 			require.Error(t, err)
-			require.NotContains(t, out, "Approved GitOps")
-		})
-	}
-}
-
-func TestReleaseAllowsSelfReviewWithRequiredReviewer(t *testing.T) {
-	protected := `{"protection_rules":[{"type":"required_reviewers","prevent_self_review":false,"reviewers":[{"type":"User","reviewer":{"login":"operator"}}]}]}`
-	for _, mode := range []string{"prepare", "instructions"} {
-		t.Run(mode, func(t *testing.T) {
-			outputFile := filepath.ToSlash(filepath.Join(t.TempDir(), "output"))
-			_, output, err := runReleaseScript(t, "release.sh", mode, "", "ENVIRONMENT_JSON="+protected, "GITHUB_OUTPUT="+outputFile, "GITHUB_STEP_SUMMARY="+outputFile)
-			require.NoError(t, err, output)
+			require.NotContains(t, out, "Release evidence ready")
+			_, out, err = runReleaseScript(t, "release.sh", mode, "", append(extra, "FAIL_COMMAND=gh api --paginate repos/example/portal/environments/production/deployment-branch-policies?per_page=100")...)
+			require.Error(t, err)
+			require.NotContains(t, out, "Release evidence ready")
 		})
 	}
 }
