@@ -12,6 +12,8 @@ Le BFF repose sur `net/http`, `client-go`, `go-oidc` et `slog`. Il n'utilise ni 
 
 Keycloak fournit un client OIDC confidentiel `homelab-portal`, avec Authorization Code + PKCE, scopes `openid profile groups`, claim JSON `groups`, groupe administrateur exact `portal-admin`, callback `/auth/callback` et déconnexion `/auth/logout`. Le navigateur ne reçoit jamais de token. Le BFF crée une session chiffrée et signée dans un cookie `Secure`, `HttpOnly`, `SameSite=Lax`.
 
+L'identité canonique reste l'issuer HTTPS public `https://keycloak.taildf6cd4.ts.net/realms/homelab`, utilisé pour les redirections navigateur et la validation du claim `iss`. Les appels serveur du portail (discovery, échange de code, JWKS et userinfo) sont réécrits de façon stricte vers `http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab`. Un issuer public HTTP reste interdit. Des origines identiques ne sont qu'une commodité locale/de test ; le déploiement homelab impose ces origines publique et interne distinctes.
+
 Une session dure au plus 4 heures et expire après 30 minutes d'inactivité. Elle ne contient pas de refresh token. La clé de session admet une clé courante et une clé précédente lors d'une rotation ; une déconnexion détruit la session locale. Une indisponibilité temporaire de Keycloak n'annule pas une session locale avant son expiration, mais interdit les nouvelles connexions.
 
 Le catalogue dérive uniquement des Ingress `networking.k8s.io/v1` de classe `tailscale` publiés par métadonnées GitOps valides et possédant exactement un hostname LoadBalancer utilisable. La cible est strictement `https://<hostname>`. Les IP, URL construites, cibles non HTTP et sondages sortants sont exclus. `available` signifie que cette publication est valide et actuelle, jamais que l'application répond à HTTP.
@@ -25,6 +27,8 @@ La cible est Kubernetes `v1.36.4+k3s1`; l'image est publiée pour `linux/amd64` 
 Le portail démarre avec une réplique, sans PVC. Ses ressources sont `25m` CPU et `48Mi` en requests, `100m` CPU et `128Mi` en limits, avec 20 secondes d'arrêt gracieux. Un `ClusterRole` cross-namespace n'accorde que `get`, `list` et `watch` sur les Ingress. Aucun Secret, Pod, Service, Deployment ou droit d'écriture n'est accordé.
 
 Une `NetworkPolicy` deny-by-default autorise seulement l'entrée depuis le proxy Tailscale et le scrape Prometheus, ainsi que la sortie vers kube-dns, l'API Kubernetes et Keycloak. Son application effective dépend du CNI du cluster et doit être vérifiée au déploiement.
+
+La sortie Keycloak est limitée au namespace `keycloak`, aux pods portant exactement `app=keycloak` et au port TCP 8080 ; aucune sortie HTTP ou Internet générale n'est accordée.
 
 Le premier list Kubernetes a un délai de 10 secondes. Le watch utilise un backoff avec jitter de 1 à 30 secondes et reliste après `410 Gone`; son snapshot est atomique. Le dernier catalogue valide reste affiché, est signalé dégradé après 2 minutes, puis expiré après 15 minutes : `/readyz` échoue alors, mais les derniers liens restent affichés avec leur état obsolète.
 

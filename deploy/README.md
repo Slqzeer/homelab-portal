@@ -22,23 +22,29 @@ policies to whole namespaces, CIDR ranges, or all ports to work around a failure
 | Resource | Values to set or verify |
 | --- | --- |
 | Deployment image patch | Approved registry and SHA-256 image digest |
-| ConfigMap | Portal HTTPS URL, Keycloak issuer URL, portal Ingress identity; distinct `PORT` (8080) and `OPERATIONS_PORT` (8081) |
+| ConfigMap | Portal HTTPS URL, public HTTPS `OIDC_ISSUER_URL`, internal `OIDC_BACKCHANNEL_URL`, portal Ingress identity; distinct `PORT` (8080) and `OPERATIONS_PORT` (8081) |
 | VaultStaticSecret | Existing VaultAuth reference, KV-v2 mount and path |
 | NetworkPolicy ingress | Tailscale operator namespace and exact parent Ingress identity labels; Prometheus namespace and named scraper labels |
 | NetworkPolicy DNS egress | Actual kube-dns namespace/labels and TCP/UDP 53; NodeLocal DNS needs a separately reviewed narrow address exception |
 | NetworkPolicy API egress | Replace `192.0.2.1/32` (Service VIP) and `198.51.100.1/32` (API endpoint) with actual single-host addresses; verify 443/6443 and every HA endpoint |
-| NetworkPolicy Keycloak egress | Keycloak namespace, pod labels, and TLS target port (example 8443) |
+| NetworkPolicy Keycloak egress | Namespace `keycloak`, pod label `app=keycloak`, and TCP 8080 only |
 | ServiceMonitor / PrometheusRule | Labels accepted by the existing Prometheus selectors, and permission to discover namespace `portal` |
 
-The homelab overlay exposes network selector/address/Keycloak-port settings as
-explicit JSON patches. API address examples are documentation-only IPs and
-intentionally fail closed. Kubernetes policies do not select Services or DNS
-names. CNI DNAT ordering determines whether Service VIPs or endpoint addresses
-are matched. Verify actual paths in the disposable-cluster acceptance task,
-including kubelet probes and DNS. The Keycloak issuer hostname must resolve to
-the approved Keycloak TLS endpoint (with a matching trusted certificate), not a
-general ingress gateway or Tailnet proxy outside those selectors. No Vault
-egress is granted to the application: VSO performs synchronization separately.
+The homelab overlay exposes network selector/address settings as explicit JSON
+patches. API address examples are documentation-only IPs and intentionally fail
+closed. Kubernetes policies do not select Services or DNS names. CNI DNAT
+ordering determines whether Service VIPs or endpoint addresses are matched.
+Verify actual paths in the disposable-cluster acceptance task, including kubelet
+probes and DNS. No Vault egress is granted to the application: VSO performs
+synchronization separately.
+
+The production overlay keeps the canonical issuer at
+`https://keycloak.taildf6cd4.ts.net/realms/homelab` and sets the server-side
+backchannel to `http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab`.
+Browsers and tokens retain the public HTTPS identity; the portal rewrites only
+its own OIDC discovery, token, JWKS, and userinfo requests to the in-cluster
+Service. Public HTTP issuers remain invalid. Equal issuer and backchannel origins
+are supported only as a local/test convenience, not in homelab production.
 
 ## Secrets and restart behavior
 

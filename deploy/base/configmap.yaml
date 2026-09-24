@@ -7,6 +7,7 @@ data:
   OPERATIONS_PORT: "8081"
   PORTAL_BASE_URL: https://portal.example.ts.net
   OIDC_ISSUER_URL: https://keycloak.example.ts.net/realms/homelab
+  OIDC_BACKCHANNEL_URL: https://keycloak.internal.invalid/realms/homelab
   OIDC_CLIENT_ID: homelab-portal
   OIDC_GROUPS_CLAIM: groups
   PORTAL_INGRESS_NAMESPACE: portal

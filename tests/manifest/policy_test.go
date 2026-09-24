@@ -72,8 +72,9 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 	// This allowlist prevents adding credential-valued environment variables.
 	require.Equal(t, map[string]string{
 		"PORT": "8080", "OPERATIONS_PORT": "8081", "PORTAL_BASE_URL": "https://portal.example.ts.net",
-		"OIDC_ISSUER_URL": "https://keycloak.example.ts.net/realms/homelab",
-		"OIDC_CLIENT_ID":  "homelab-portal", "OIDC_GROUPS_CLAIM": "groups",
+		"OIDC_ISSUER_URL":      "https://keycloak.taildf6cd4.ts.net/realms/homelab",
+		"OIDC_BACKCHANNEL_URL": "http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab",
+		"OIDC_CLIENT_ID":       "homelab-portal", "OIDC_GROUPS_CLAIM": "groups",
 		"PORTAL_INGRESS_NAMESPACE": "portal", "PORTAL_INGRESS_NAME": "homelab-portal",
 		"OIDC_CLIENT_SECRET_FILE":  "/var/run/portal-secrets/oidc-client-secret",
 		"SESSION_CURRENT_KEY_FILE": "/var/run/portal-secrets/session-current-key",
@@ -270,8 +271,25 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 			{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.1/32"}},
 			{IPBlock: &networkingv1.IPBlock{CIDR: "198.51.100.1/32"}},
 		}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 443), port(corev1.ProtocolTCP, 6443)}},
-		{To: []networkingv1.NetworkPolicyPeer{peer("keycloak", map[string]string{"app.kubernetes.io/name": "keycloak", "app.kubernetes.io/instance": "homelab"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8443)}},
+		{To: []networkingv1.NetworkPolicyPeer{peer("keycloak", map[string]string{"app": "keycloak"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
 	}, allow.Spec.Egress, "no general Internet, Vault, target application, or whole-namespace access")
+	approvedIPBlocks := map[string]bool{"192.0.2.1/32": true, "198.51.100.1/32": true}
+	for _, rule := range allow.Spec.Egress {
+		for _, networkPort := range rule.Ports {
+			if networkPort.Port != nil {
+				require.NotEqual(t, intstr.FromInt(80), *networkPort.Port, "plain HTTP must not be broadly admitted")
+				require.NotEqual(t, intstr.FromInt(8443), *networkPort.Port, "obsolete Keycloak TLS port must not be admitted")
+			}
+		}
+		for _, destination := range rule.To {
+			if destination.PodSelector != nil {
+				require.NotEqual(t, metav1.LabelSelector{}, *destination.PodSelector, "egress must not select every pod in a namespace")
+			}
+			if destination.IPBlock != nil {
+				require.True(t, approvedIPBlocks[destination.IPBlock.CIDR], "unexpected egress IP block %q", destination.IPBlock.CIDR)
+			}
+		}
+	}
 }
 
 func TestAlertsCoverStartupExpiryReconnectAndPersistentInvalidMetadata(t *testing.T) {

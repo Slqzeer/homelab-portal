@@ -72,8 +72,7 @@ spec:
               kubernetes.io/metadata.name: keycloak
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: keycloak
-              app.kubernetes.io/instance: homelab
+              app: keycloak
       ports:
         - protocol: TCP
-          port: 8443
+          port: 8080

@@ -76,6 +76,15 @@ is safe because operational routes are absent from that listener. Retain the
 public operational 404s, and internal health/readiness/metrics observations.
 Non-default ports require matching configuration and manifest changes.
 
+The OIDC backchannel release also requires one coordinated configuration. The
+rendered ConfigMap must contain public HTTPS issuer
+`https://keycloak.taildf6cd4.ts.net/realms/homelab` and internal backchannel
+`http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab`. Public HTTP
+issuers remain invalid; equal origins are only a local/test convenience. Verify
+the rendered NetworkPolicy permits Keycloak egress only to namespace `keycloak`,
+pods labeled `app=keycloak`, on TCP 8080, with no TCP 80 or 8443,
+whole-namespace, or general Internet rule. Keep the existing VSO secret schema.
+
 ## Rollback
 
 Locate the previous reviewed GitOps commit and its retained digest/evidence. Revert the promotion commit in the GitOps repository through review, restoring the image, application revision, and matching listener manifests together. A single-listener image cannot satisfy the internal-only operations acceptance gate behind a Tailscale `/` prefix; do not expose that image without a separately reviewed isolation mechanism. Do not rebuild an old tag, mutate a tag, edit live Kubernetes resources, or use an unreviewed Argo override. Once reconciled, verify Argo revision/health, readiness, authentication/catalogue behavior and alerts again. Record the reverted revision, restored digest and outcome in the release record.
