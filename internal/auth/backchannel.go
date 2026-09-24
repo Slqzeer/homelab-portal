@@ -70,10 +70,16 @@ func newBackchannelClient(issuerRaw, backchannelRaw string, timeout time.Duratio
 	if err != nil || issuer.Path != backchannel.Path || timeout <= 0 {
 		return nil, errBackchannelConfig
 	}
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errBackchannelConfig
+	}
+	transportClone := defaultTransport.Clone()
+	transportClone.Proxy = nil
 	transport := &backchannelTransport{
 		issuer:      issuer,
 		backchannel: backchannel,
-		base:        http.DefaultTransport.(*http.Transport).Clone(),
+		base:        transportClone,
 	}
 	return &http.Client{
 		Transport: transport,

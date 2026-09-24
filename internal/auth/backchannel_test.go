@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -188,4 +189,54 @@ func mustURL(t *testing.T, raw string) *url.URL {
 	parsed, err := url.Parse(raw)
 	require.NoError(t, err)
 	return parsed
+}
+
+func TestBackchannelClientDoesNotUseConfiguredDefaultProxy(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	var proxyCalls atomic.Int32
+	configured := originalTransport.(*http.Transport).Clone()
+	configured.Proxy = func(*http.Request) (*url.URL, error) {
+		proxyCalls.Add(1)
+		return nil, errors.New("proxy must not be used")
+	}
+	http.DefaultTransport = configured
+
+	var internalRequests atomic.Int32
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		internalRequests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer internal.Close()
+
+	client, err := newBackchannelClient("https://public.example/realms/homelab", internal.URL+"/realms/homelab", time.Second)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodGet, "https://public.example/realms/homelab/keys", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.EqualValues(t, 1, internalRequests.Load())
+	require.Zero(t, proxyCalls.Load())
+}
+
+func TestNewBackchannelClientRejectsNonHTTPDefaultTransportWithoutPanicking(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("unexpected request")
+	})
+
+	var client *http.Client
+	var err error
+	require.NotPanics(t, func() {
+		client, err = newBackchannelClient(
+			"https://public.example/realms/homelab",
+			"http://internal.example/realms/homelab",
+			time.Second,
+		)
+	})
+	require.Nil(t, client)
+	require.EqualError(t, err, "invalid OIDC backchannel configuration")
 }
