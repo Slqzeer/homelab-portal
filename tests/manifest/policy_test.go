@@ -276,10 +276,7 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 	approvedIPBlocks := map[string]bool{"192.0.2.1/32": true, "198.51.100.1/32": true}
 	for _, rule := range allow.Spec.Egress {
 		for _, networkPort := range rule.Ports {
-			if networkPort.Port != nil {
-				require.NotEqual(t, intstr.FromInt(80), *networkPort.Port, "plain HTTP must not be broadly admitted")
-				require.NotEqual(t, intstr.FromInt(8443), *networkPort.Port, "obsolete Keycloak TLS port must not be admitted")
-			}
+			require.False(t, forbiddenTCPPort(networkPort), "TCP 80 and obsolete Keycloak TCP 8443 must not be admitted")
 		}
 		for _, destination := range rule.To {
 			if destination.PodSelector != nil {
@@ -289,6 +286,44 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 				require.True(t, approvedIPBlocks[destination.IPBlock.CIDR], "unexpected egress IP block %q", destination.IPBlock.CIDR)
 			}
 		}
+	}
+}
+
+func forbiddenTCPPort(networkPort networkingv1.NetworkPolicyPort) bool {
+	if networkPort.Port == nil || networkPort.Port.Type != intstr.Int {
+		return false
+	}
+	if networkPort.Protocol != nil && *networkPort.Protocol != corev1.ProtocolTCP {
+		return false
+	}
+	port := networkPort.Port.IntValue()
+	return port == 80 || port == 8443
+}
+
+func TestForbiddenTCPPortDistinguishesTCPFromUDP(t *testing.T) {
+	tcp := corev1.ProtocolTCP
+	udp := corev1.ProtocolUDP
+	port := func(protocol *corev1.Protocol, number int) networkingv1.NetworkPolicyPort {
+		value := intstr.FromInt(number)
+		return networkingv1.NetworkPolicyPort{Protocol: protocol, Port: &value}
+	}
+	cases := []struct {
+		name        string
+		networkPort networkingv1.NetworkPolicyPort
+		want        bool
+	}{
+		{"explicit TCP 80", port(&tcp, 80), true},
+		{"explicit TCP 8443", port(&tcp, 8443), true},
+		{"default TCP 80", port(nil, 80), true},
+		{"default TCP 8443", port(nil, 8443), true},
+		{"UDP 80", port(&udp, 80), false},
+		{"UDP 8443", port(&udp, 8443), false},
+		{"allowed TCP 8080", port(&tcp, 8080), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, forbiddenTCPPort(tc.networkPort))
+		})
 	}
 }
 
