@@ -10,15 +10,17 @@ patches:
       name: homelab-portal
     patch: |-
       - op: replace
+        path: /data/PORTAL_BASE_URL
+        value: https://portal.taildf6cd4.ts.net
+      - op: replace
         path: /data/OIDC_ISSUER_URL
         value: https://keycloak.taildf6cd4.ts.net/realms/homelab
       - op: replace
         path: /data/OIDC_BACKCHANNEL_URL
         value: http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab
 
-  # Non-secret site configuration. These example addresses intentionally
-  # cannot reach a real API. Set exact VIP/endpoint /32s (or IPv6 /128s).
-  # Verify selectors against the actual proxy, scraper, DNS and Keycloak pods.
+  # Non-secret site configuration observed from the homelab cluster.
+  # Verify selectors and API endpoints again if cluster networking changes.
   - target:
       kind: NetworkPolicy
       name: homelab-portal
@@ -42,7 +44,7 @@ patches:
           operator.prometheus.io/name: homelab
       - op: replace
         path: /spec/egress/1/to/0/ipBlock/cidr
-        value: 192.0.2.1/32
+        value: 10.43.0.1/32
       - op: replace
         path: /spec/egress/1/to/1/ipBlock/cidr
-        value: 198.51.100.1/32
+        value: 192.168.1.201/32

@@ -71,7 +71,7 @@ func TestSecretsStayInFilesAndOperationsStayOnInternalService(t *testing.T) {
 	config := decode[corev1.ConfigMap](t, objectOf(t, objects, "ConfigMap", "homelab-portal"))
 	// This allowlist prevents adding credential-valued environment variables.
 	require.Equal(t, map[string]string{
-		"PORT": "8080", "OPERATIONS_PORT": "8081", "PORTAL_BASE_URL": "https://portal.example.ts.net",
+		"PORT": "8080", "OPERATIONS_PORT": "8081", "PORTAL_BASE_URL": "https://portal.taildf6cd4.ts.net",
 		"OIDC_ISSUER_URL":      "https://keycloak.taildf6cd4.ts.net/realms/homelab",
 		"OIDC_BACKCHANNEL_URL": "http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab",
 		"OIDC_CLIENT_ID":       "homelab-portal", "OIDC_GROUPS_CLAIM": "groups",
@@ -230,6 +230,15 @@ func TestProductionOverlayDelegatesNamespaceToBootstrap(t *testing.T) {
 	require.Equal(t, "v1.36", namespace.Labels["pod-security.kubernetes.io/enforce-version"])
 }
 
+func TestProductionOverlayContainsOnlyObservedSiteValues(t *testing.T) {
+	objects := render(t)
+	rendered, err := json.Marshal(objects)
+	require.NoError(t, err)
+	for _, placeholder := range []string{"192.0.2.1", "198.51.100.1", "registry.example", "example.ts.net"} {
+		require.NotContains(t, string(rendered), placeholder, "production render must not retain template value %q", placeholder)
+	}
+}
+
 func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 	objects := render(t)
 	var policies []networkingv1.NetworkPolicy
@@ -268,12 +277,12 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 	require.ElementsMatch(t, []networkingv1.NetworkPolicyEgressRule{
 		{To: []networkingv1.NetworkPolicyPeer{peer("kube-system", map[string]string{"k8s-app": "kube-dns"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolUDP, 53), port(corev1.ProtocolTCP, 53)}},
 		{To: []networkingv1.NetworkPolicyPeer{
-			{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.1/32"}},
-			{IPBlock: &networkingv1.IPBlock{CIDR: "198.51.100.1/32"}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "10.43.0.1/32"}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "192.168.1.201/32"}},
 		}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 443), port(corev1.ProtocolTCP, 6443)}},
 		{To: []networkingv1.NetworkPolicyPeer{peer("keycloak", map[string]string{"app": "keycloak"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
 	}, allow.Spec.Egress, "no general Internet, Vault, target application, or whole-namespace access")
-	approvedIPBlocks := map[string]bool{"192.0.2.1/32": true, "198.51.100.1/32": true}
+	approvedIPBlocks := map[string]bool{"10.43.0.1/32": true, "192.168.1.201/32": true}
 	for _, rule := range allow.Spec.Egress {
 		for _, networkPort := range rule.Ports {
 			require.False(t, forbiddenTCPPort(networkPort), "TCP 80 and obsolete Keycloak TCP 8443 must not be admitted")
