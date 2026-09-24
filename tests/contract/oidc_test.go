@@ -8,13 +8,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Slqzeer/homelab-portal/internal/auth"
 	"github.com/Slqzeer/homelab-portal/internal/catalog"
 	"github.com/Slqzeer/homelab-portal/internal/config"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/require"
 )
@@ -22,30 +23,50 @@ import (
 const fixtureVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 
 type providerFixture struct {
-	server          *httptest.Server
-	key             *rsa.PrivateKey
-	claims          map[string]any
-	tokenRequests   int
-	upstreamFailure bool
+	server            *httptest.Server
+	publicIssuer      string
+	key               *rsa.PrivateKey
+	claims            map[string]any
+	discoveryRequests atomic.Int32
+	tokenRequests     atomic.Int32
+	jwksRequests      atomic.Int32
+	tokenFailure      atomic.Bool
+	tokenUnavailable  atomic.Bool
+	jwksFailure       atomic.Bool
+	requestMu         sync.Mutex
+	requests          []string
 }
 
 func newProviderFixture(t *testing.T) *providerFixture {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	f := &providerFixture{key: key}
-	f.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f := &providerFixture{key: key, publicIssuer: "https://public.example/realms/homelab"}
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.requestMu.Lock()
+		f.requests = append(f.requests, r.Host+r.URL.RequestURI())
+		f.requestMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/.well-known/openid-configuration":
-			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": f.server.URL, "authorization_endpoint": f.server.URL + "/authorize", "token_endpoint": f.server.URL + "/token", "jwks_uri": f.server.URL + "/keys", "id_token_signing_alg_values_supported": []string{"RS256"}})
-		case "/keys":
+		case "/realms/homelab/.well-known/openid-configuration":
+			f.discoveryRequests.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": f.publicIssuer, "authorization_endpoint": f.publicIssuer + "/authorize", "token_endpoint": f.publicIssuer + "/token", "jwks_uri": f.publicIssuer + "/keys", "userinfo_endpoint": f.publicIssuer + "/userinfo", "id_token_signing_alg_values_supported": []string{"RS256"}})
+		case "/realms/homelab/keys":
+			f.jwksRequests.Add(1)
+			if f.jwksFailure.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "fixture", Algorithm: "RS256", Use: "sig"}}})
-		case "/token":
-			f.tokenRequests++
+		case "/realms/homelab/token":
+			f.tokenRequests.Add(1)
+			if f.tokenUnavailable.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			client, secret, ok := r.BasicAuth()
 			_ = r.ParseForm()
-			if f.upstreamFailure || !ok || client != "homelab-portal" || secret != "fixture-secret" || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "secret-code" || r.Form.Get("code_verifier") != fixtureVerifier || r.Form.Get("redirect_uri") != "https://portal.example/auth/callback" {
+			if f.tokenFailure.Load() || !ok || client != "homelab-portal" || secret != "fixture-secret" || r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "secret-code" || r.Form.Get("code_verifier") != fixtureVerifier || r.Form.Get("redirect_uri") != "https://portal.example/auth/callback" {
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant", "error_description": "secret-code access-token refresh-token fixture-secret"})
 				return
@@ -75,16 +96,22 @@ func newProviderFixture(t *testing.T) *providerFixture {
 		}
 	}))
 	t.Cleanup(f.server.Close)
-	f.claims = map[string]any{"iss": f.server.URL, "aud": "homelab-portal", "sub": "private-subject", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": "fixture-nonce", "groups": []string{"portal-admin", "Team A"}}
+	f.claims = map[string]any{"iss": f.publicIssuer, "aud": "homelab-portal", "sub": "private-subject", "exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(), "nonce": "fixture-nonce", "groups": []string{"portal-admin", "Team A"}}
 	return f
 }
 
 func (f *providerFixture) client(t *testing.T) (*auth.OIDC, context.Context) {
 	t.Helper()
-	ctx := oidc.ClientContext(context.Background(), f.server.Client())
-	client, err := auth.NewOIDC(ctx, config.Config{OIDCIssuerURL: f.server.URL, OIDCClientID: "homelab-portal", OIDCClientSecret: "fixture-secret", OIDCGroupsClaim: "groups", PortalBaseURL: "https://portal.example"})
+	ctx := context.Background()
+	client, err := auth.NewOIDC(ctx, config.Config{OIDCIssuerURL: f.publicIssuer, OIDCBackchannelURL: f.server.URL + "/realms/homelab", OIDCClientID: "homelab-portal", OIDCClientSecret: "fixture-secret", OIDCGroupsClaim: "groups", PortalBaseURL: "https://portal.example"})
 	require.NoError(t, err)
 	return client, ctx
+}
+
+func (f *providerFixture) recordedRequests() []string {
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	return append([]string(nil), f.requests...)
 }
 
 func callbackParams() auth.CallbackParams {
@@ -99,6 +126,15 @@ func TestOIDCCallbackAcceptsSignedClaimsAndReturnsOnlyAuthorizationFacts(t *test
 	require.Equal(t, auth.Claims{Groups: []string{"portal-admin", "Team A"}}, claims)
 	encoded, err := json.Marshal(claims)
 	require.NoError(t, err)
+	require.EqualValues(t, 1, f.discoveryRequests.Load())
+	require.EqualValues(t, 1, f.tokenRequests.Load())
+	require.EqualValues(t, 1, f.jwksRequests.Load())
+	internalAuthority := f.server.Listener.Addr().String()
+	require.Equal(t, []string{
+		internalAuthority + "/realms/homelab/.well-known/openid-configuration",
+		internalAuthority + "/realms/homelab/token",
+		internalAuthority + "/realms/homelab/keys",
+	}, f.recordedRequests())
 	for _, private := range []string{"private-subject", "secret-code", "access-token", "refresh-token", "id_token"} {
 		require.NotContains(t, string(encoded), private)
 	}
@@ -165,7 +201,7 @@ func TestOIDCCallbackRequiresTransactionCorrelationBeforeExchange(t *testing.T) 
 			mutate(&params)
 			_, err := client.Callback(ctx, params)
 			require.ErrorIs(t, err, auth.ErrLoginFailed)
-			require.Zero(t, f.tokenRequests, "invalid transaction must not send code to provider")
+			require.Zero(t, f.tokenRequests.Load(), "invalid transaction must not send code to provider")
 		})
 	}
 }
@@ -173,7 +209,7 @@ func TestOIDCCallbackRequiresTransactionCorrelationBeforeExchange(t *testing.T) 
 func TestOIDCCallbackRejectsCrossedPKCEVerifierAndSanitizesProviderErrors(t *testing.T) {
 	for _, upstreamFailure := range []bool{false, true} {
 		f := newProviderFixture(t)
-		f.upstreamFailure = upstreamFailure
+		f.tokenFailure.Store(upstreamFailure)
 		client, ctx := f.client(t)
 		params := callbackParams()
 		if !upstreamFailure {
@@ -206,4 +242,42 @@ func TestExistingPortalSessionAuthorizesUntilLocalExpiryDuringProviderOutage(t *
 	identity, err = manager.Load(r, now.Add(30*time.Minute))
 	require.ErrorIs(t, err, auth.ErrInvalidSession)
 	require.Empty(t, catalog.Visible(items, identity))
+}
+
+func TestOIDCCallbackReturnsGenericFailureForBackchannelOutages(t *testing.T) {
+	cases := map[string]func(*providerFixture){
+		"token": func(f *providerFixture) { f.tokenUnavailable.Store(true) },
+		"JWKS":  func(f *providerFixture) { f.jwksFailure.Store(true) },
+	}
+	for name, makeUnavailable := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newProviderFixture(t)
+			makeUnavailable(f)
+			client, ctx := f.client(t)
+
+			claims, err := client.Callback(ctx, callbackParams())
+			require.Empty(t, claims)
+			require.ErrorIs(t, err, auth.ErrLoginFailed)
+			require.EqualError(t, err, "portal login failed")
+			for _, private := range []string{f.publicIssuer, f.server.URL, "secret-code", "access-token", "refresh-token", "fixture-secret"} {
+				require.NotContains(t, err.Error(), private)
+			}
+		})
+	}
+}
+
+func TestOIDCCallbackHonorsCancelledContextWithoutSendingCredentials(t *testing.T) {
+	f := newProviderFixture(t)
+	client, _ := f.client(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	claims, err := client.Callback(ctx, callbackParams())
+	require.Empty(t, claims)
+	require.ErrorIs(t, err, auth.ErrLoginFailed)
+	require.EqualError(t, err, "portal login failed")
+	require.Zero(t, f.tokenRequests.Load())
+	for _, private := range []string{f.publicIssuer, f.server.URL, "secret-code", "fixture-secret"} {
+		require.NotContains(t, err.Error(), private)
+	}
 }

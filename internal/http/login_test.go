@@ -21,9 +21,10 @@ import (
 	"github.com/Slqzeer/homelab-portal/internal/auth"
 	"github.com/Slqzeer/homelab-portal/internal/config"
 	portalhttp "github.com/Slqzeer/homelab-portal/internal/http"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 )
+
+const loginPublicIssuer = "https://public.example/realms/homelab"
 
 type loginProvider struct {
 	server           *httptest.Server
@@ -42,14 +43,14 @@ func newLoginProvider(t *testing.T) *loginProvider {
 	p := &loginProvider{}
 	p.nonce.Store("")
 	p.challenge.Store("")
-	p.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/.well-known/openid-configuration":
-			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": p.server.URL, "authorization_endpoint": p.server.URL + "/authorize", "token_endpoint": p.server.URL + "/token", "jwks_uri": p.server.URL + "/keys", "id_token_signing_alg_values_supported": []string{"RS256"}})
-		case "/keys":
+		case "/realms/homelab/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": loginPublicIssuer, "authorization_endpoint": loginPublicIssuer + "/authorize", "token_endpoint": loginPublicIssuer + "/token", "jwks_uri": loginPublicIssuer + "/keys", "userinfo_endpoint": loginPublicIssuer + "/userinfo", "id_token_signing_alg_values_supported": []string{"RS256"}})
+		case "/realms/homelab/keys":
 			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "fixture", Algorithm: "RS256", Use: "sig"}}})
-		case "/token":
+		case "/realms/homelab/token":
 			p.requests.Add(1)
 			_ = r.ParseForm()
 			client, secret, ok := r.BasicAuth()
@@ -59,7 +60,7 @@ func newLoginProvider(t *testing.T) *loginProvider {
 				return
 			}
 			signer, _ := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: jose.JSONWebKey{Key: key, KeyID: "fixture"}}, nil)
-			claims, _ := json.Marshal(map[string]any{"iss": p.server.URL, "aud": "homelab-portal", "sub": "private-subject", "exp": time.Now().Add(time.Hour).Unix(), "nonce": p.nonce.Load().(string), "groups": []string{"portal-admin"}})
+			claims, _ := json.Marshal(map[string]any{"iss": loginPublicIssuer, "aud": "homelab-portal", "sub": "private-subject", "exp": time.Now().Add(time.Hour).Unix(), "nonce": p.nonce.Load().(string), "groups": []string{"portal-admin"}})
 			signed, _ := signer.Sign(claims)
 			raw, _ := signed.CompactSerialize()
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "private-access-token", "refresh_token": "private-refresh-token", "token_type": "Bearer", "id_token": raw})
@@ -68,8 +69,8 @@ func newLoginProvider(t *testing.T) *loginProvider {
 		}
 	}))
 	t.Cleanup(p.server.Close)
-	p.ctx = oidc.ClientContext(context.Background(), p.server.Client())
-	p.client, err = auth.NewOIDC(p.ctx, config.Config{OIDCIssuerURL: p.server.URL, OIDCClientID: "homelab-portal", OIDCClientSecret: "fixture-secret", OIDCGroupsClaim: "groups", PortalBaseURL: "https://portal.example"})
+	p.ctx = context.Background()
+	p.client, err = auth.NewOIDC(p.ctx, config.Config{OIDCIssuerURL: loginPublicIssuer, OIDCBackchannelURL: p.server.URL + "/realms/homelab", OIDCClientID: "homelab-portal", OIDCClientSecret: "fixture-secret", OIDCGroupsClaim: "groups", PortalBaseURL: "https://portal.example"})
 	if err != nil {
 		t.Fatal(err)
 	}

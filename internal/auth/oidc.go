@@ -5,8 +5,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -16,9 +19,17 @@ import (
 )
 
 type OIDC struct {
+	client      *http.Client
 	oauth       oauth2.Config
 	verifier    *oidc.IDTokenVerifier
 	groupsClaim string
+}
+
+type providerMetadata struct {
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	JWKSURL               string `json:"jwks_uri"`
+	UserInfoEndpoint      string `json:"userinfo_endpoint"`
 }
 
 // CallbackParams separates untrusted callback query values (Code, State) from
@@ -41,7 +52,8 @@ func (o *OIDC) Callback(ctx context.Context, params CallbackParams) (Claims, err
 	if params.Code == "" || params.ExpectedState == "" || params.Nonce == "" || !pkceVerifier.MatchString(params.Verifier) || subtle.ConstantTimeCompare([]byte(params.State), []byte(params.ExpectedState)) != 1 {
 		return Claims{}, ErrLoginFailed
 	}
-	token, err := o.oauth.Exchange(ctx, params.Code, oauth2.VerifierOption(params.Verifier))
+	providerCtx := oidc.ClientContext(ctx, o.client)
+	token, err := o.oauth.Exchange(providerCtx, params.Code, oauth2.VerifierOption(params.Verifier))
 	if err != nil {
 		return Claims{}, ErrLoginFailed
 	}
@@ -49,7 +61,7 @@ func (o *OIDC) Callback(ctx context.Context, params CallbackParams) (Claims, err
 	if !ok {
 		return Claims{}, ErrLoginFailed
 	}
-	idToken, err := o.verifier.Verify(ctx, raw)
+	idToken, err := o.verifier.Verify(providerCtx, raw)
 	if err != nil {
 		return Claims{}, ErrLoginFailed
 	}
@@ -100,13 +112,22 @@ func NewOIDC(ctx context.Context, cfg config.Config) (*OIDC, error) {
 	if cfg.OIDCClientID == "" || cfg.OIDCClientSecret == "" || cfg.OIDCGroupsClaim == "" {
 		return nil, errors.New("invalid OIDC configuration")
 	}
-	provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuerURL)
+	client, err := newBackchannelClient(cfg.OIDCIssuerURL, cfg.OIDCBackchannelURL, 10*time.Second)
 	if err != nil {
+		return nil, errors.New("OIDC provider unavailable")
+	}
+	providerCtx := oidc.ClientContext(ctx, client)
+	provider, err := oidc.NewProvider(providerCtx, cfg.OIDCIssuerURL)
+	if err != nil {
+		return nil, errors.New("OIDC provider unavailable")
+	}
+	if err := validateProviderEndpoints(provider, cfg.OIDCIssuerURL); err != nil {
 		return nil, errors.New("OIDC provider unavailable")
 	}
 	endpoint := provider.Endpoint()
 	endpoint.AuthStyle = oauth2.AuthStyleInHeader
 	return &OIDC{
+		client:      client,
 		oauth:       oauth2.Config{ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret, RedirectURL: strings.TrimRight(cfg.PortalBaseURL, "/") + "/auth/callback", Endpoint: endpoint, Scopes: []string{oidc.ScopeOpenID, "profile", "groups"}},
 		verifier:    provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID}),
 		groupsClaim: cfg.OIDCGroupsClaim,
@@ -117,4 +138,28 @@ func NewOIDC(ctx context.Context, cfg config.Config) (*OIDC, error) {
 // in an authenticated browser-bound transaction until the callback is consumed.
 func (o *OIDC) LoginURL(state, nonce, verifier string) string {
 	return o.oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier))
+}
+
+func validateProviderEndpoints(provider *oidc.Provider, issuer string) error {
+	if provider == nil {
+		return errors.New("invalid OIDC provider metadata")
+	}
+	var metadata providerMetadata
+	if err := provider.Claims(&metadata); err != nil {
+		return errors.New("invalid OIDC provider metadata")
+	}
+	issuerURL, err := url.Parse(issuer)
+	if err != nil {
+		return errors.New("invalid OIDC provider metadata")
+	}
+	for _, raw := range []string{metadata.AuthorizationEndpoint, metadata.TokenEndpoint, metadata.JWKSURL, metadata.UserInfoEndpoint} {
+		endpoint, err := url.Parse(raw)
+		if raw == "" || err != nil {
+			return errors.New("invalid OIDC provider metadata")
+		}
+		if _, err := rewriteBackchannelURL(endpoint, issuerURL, issuerURL); err != nil {
+			return errors.New("invalid OIDC provider metadata")
+		}
+	}
+	return nil
 }

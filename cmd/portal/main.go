@@ -20,7 +20,6 @@ import (
 	"github.com/Slqzeer/homelab-portal/internal/config"
 	portalhttp "github.com/Slqzeer/homelab-portal/internal/http"
 	"github.com/Slqzeer/homelab-portal/internal/kube"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,9 +55,6 @@ func run(logger *slog.Logger) bool {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	discoveryCtx, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
-	// go-oidc retains this client for background JWKS refreshes, which do
-	// not inherit the callback request deadline.
-	discoveryCtx = oidc.ClientContext(discoveryCtx, &http.Client{Timeout: 10 * time.Second})
 	provider, err := auth.NewOIDC(discoveryCtx, cfg)
 	cancelDiscovery()
 	if err != nil {
