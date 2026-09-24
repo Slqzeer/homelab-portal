@@ -125,7 +125,7 @@ func oidcEndpointURL(values map[string]string, name string, schemes ...string) (
 		return "", fmt.Errorf("%s is required", name)
 	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed == nil {
+	if err != nil || parsed == nil || parsed.String() != raw {
 		return "", fmt.Errorf("%s must be an absolute canonical URL with an approved scheme and no credentials, query, or fragment", name)
 	}
 	allowed := false

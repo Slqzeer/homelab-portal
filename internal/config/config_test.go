@@ -187,6 +187,7 @@ func TestLoadValidatesOIDCBackchannelURL(t *testing.T) {
 		"http://id.example.test/realms/homelab?secret=value",
 		"http://id.example.test/realms/homelab?",
 		"http://id.example.test/realms/homelab#fragment",
+		"http://id.example.test/realms/homelab#",
 		"http://id.example.test/realms/other",
 		"http://id.example.test/realms/homelab/../other",
 		"http://id.example.test/realms%2fhomelab",
@@ -208,6 +209,7 @@ func TestLoadNormalizesAndValidatesOIDCIssuerPath(t *testing.T) {
 	for _, value := range []string{
 		"https://id.example.test/realms%2fhomelab",
 		"https://id.example.test/realms/homelab/../other",
+		"https://id.example.test/realms/homelab#",
 	} {
 		t.Run("rejects "+value, func(t *testing.T) {
 			_, err := Load(replaceEnv(validEnv(t), "OIDC_ISSUER_URL", value))
