@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,8 +13,12 @@ import (
 )
 
 func TestLoadRejectsMissingRequiredOIDCValues(t *testing.T) {
-	_, err := Load([]string{"PORT=8080"})
-	require.ErrorContains(t, err, "OIDC_ISSUER_URL")
+	for _, name := range []string{"OIDC_ISSUER_URL", "OIDC_BACKCHANNEL_URL"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(withoutEnv(validEnv(t), name))
+			require.ErrorContains(t, err, name)
+		})
+	}
 }
 
 func TestLoadUsesFixedCacheAndSessionDurations(t *testing.T) {
@@ -69,6 +74,7 @@ func TestLoadRequiresHTTPSBaseAndIssuerURLs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://portal.example.test", cfg.PortalBaseURL)
 	assert.Equal(t, "https://id.example.test/realms/homelab", cfg.OIDCIssuerURL)
+	assert.Equal(t, "https://id.example.test/realms/homelab", cfg.OIDCBackchannelURL)
 }
 
 func TestLoadRejectsInvalidPorts(t *testing.T) {
@@ -118,6 +124,7 @@ func validEnv(t *testing.T) []string {
 		"PORT=8080",
 		"PORTAL_BASE_URL=https://portal.example.test",
 		"OIDC_ISSUER_URL=https://id.example.test/realms/homelab",
+		"OIDC_BACKCHANNEL_URL=https://id.example.test/realms/homelab",
 		"OIDC_CLIENT_ID=homelab-portal",
 		"OIDC_GROUPS_CLAIM=groups",
 		fmt.Sprintf("OIDC_CLIENT_SECRET_FILE=%s", writeSecret("oidc-client-secret", "client-secret")),
@@ -159,4 +166,53 @@ func replaceEnv(env []string, name, value string) []string {
 		}
 	}
 	return append(env, prefix+value)
+}
+
+func TestLoadValidatesOIDCBackchannelURL(t *testing.T) {
+	env := validEnv(t)
+	for _, value := range []string{
+		"http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab",
+		"https://id.example.test/realms/homelab/",
+	} {
+		t.Run("accepts "+value, func(t *testing.T) {
+			cfg, err := Load(replaceEnv(env, "OIDC_BACKCHANNEL_URL", value))
+			require.NoError(t, err)
+			require.Equal(t, strings.TrimSuffix(value, "/"), cfg.OIDCBackchannelURL)
+		})
+	}
+
+	for _, value := range []string{
+		"ftp://id.example.test/realms/homelab",
+		"http://user@id.example.test/realms/homelab",
+		"http://id.example.test/realms/homelab?secret=value",
+		"http://id.example.test/realms/homelab?",
+		"http://id.example.test/realms/homelab#fragment",
+		"http://id.example.test/realms/other",
+		"http://id.example.test/realms/homelab/../other",
+		"http://id.example.test/realms%2fhomelab",
+		"//id.example.test/realms/homelab",
+	} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			_, err := Load(replaceEnv(env, "OIDC_BACKCHANNEL_URL", value))
+			require.ErrorContains(t, err, "OIDC_BACKCHANNEL_URL")
+			require.NotContains(t, err.Error(), value)
+		})
+	}
+}
+
+func TestLoadNormalizesAndValidatesOIDCIssuerPath(t *testing.T) {
+	cfg, err := Load(replaceEnv(validEnv(t), "OIDC_ISSUER_URL", "https://id.example.test/realms/homelab/"))
+	require.NoError(t, err)
+	require.Equal(t, "https://id.example.test/realms/homelab", cfg.OIDCIssuerURL)
+
+	for _, value := range []string{
+		"https://id.example.test/realms%2fhomelab",
+		"https://id.example.test/realms/homelab/../other",
+	} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			_, err := Load(replaceEnv(validEnv(t), "OIDC_ISSUER_URL", value))
+			require.ErrorContains(t, err, "OIDC_ISSUER_URL")
+			require.NotContains(t, err.Error(), value)
+		})
+	}
 }

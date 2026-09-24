@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +31,7 @@ type Config struct {
 	OperationsPort         int
 	PortalBaseURL          string
 	OIDCIssuerURL          string
+	OIDCBackchannelURL     string
 	OIDCClientID           string
 	OIDCGroupsClaim        string
 	OIDCClientSecret       string
@@ -54,12 +57,18 @@ func Load(env []string) (Config, error) {
 		}
 	}
 
-	if values["OIDC_ISSUER_URL"] == "" {
-		return Config{}, fmt.Errorf("OIDC_ISSUER_URL is required")
-	}
-	issuerURL, err := httpsURL(values, "OIDC_ISSUER_URL")
+	issuerURL, err := oidcEndpointURL(values, "OIDC_ISSUER_URL", "https")
 	if err != nil {
 		return Config{}, err
+	}
+	backchannelURL, err := oidcEndpointURL(values, "OIDC_BACKCHANNEL_URL", "http", "https")
+	if err != nil {
+		return Config{}, err
+	}
+	issuer, _ := url.Parse(issuerURL)
+	backchannel, _ := url.Parse(backchannelURL)
+	if issuer.Path != backchannel.Path {
+		return Config{}, fmt.Errorf("OIDC_BACKCHANNEL_URL must use the same canonical realm path as OIDC_ISSUER_URL")
 	}
 	baseURL, err := httpsURL(values, "PORTAL_BASE_URL")
 	if err != nil {
@@ -95,6 +104,7 @@ func Load(env []string) (Config, error) {
 		OperationsPort:         operationsPort,
 		PortalBaseURL:          baseURL,
 		OIDCIssuerURL:          issuerURL,
+		OIDCBackchannelURL:     backchannelURL,
 		OIDCClientID:           stringValue(values, "OIDC_CLIENT_ID", defaultOIDCClientID),
 		OIDCGroupsClaim:        stringValue(values, "OIDC_GROUPS_CLAIM", defaultOIDCGroupsClaim),
 		OIDCClientSecret:       string(clientSecret),
@@ -107,6 +117,29 @@ func Load(env []string) (Config, error) {
 		SessionAbsoluteTTL:     sessionAbsoluteTTL,
 		SessionIdleTTL:         sessionIdleTTL,
 	}, nil
+}
+
+func oidcEndpointURL(values map[string]string, name string, schemes ...string) (string, error) {
+	raw := values[name]
+	if raw == "" {
+		return "", fmt.Errorf("%s is required", name)
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil {
+		return "", fmt.Errorf("%s must be an absolute canonical URL with an approved scheme and no credentials, query, or fragment", name)
+	}
+	allowed := false
+	for _, scheme := range schemes {
+		allowed = allowed || parsed.Scheme == scheme
+	}
+	canonicalPath := strings.TrimRight(parsed.Path, "/")
+	if !allowed || parsed.Host == "" || parsed.Opaque != "" ||
+		parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" ||
+		canonicalPath == "" || path.Clean(canonicalPath) != canonicalPath {
+		return "", fmt.Errorf("%s must be an absolute canonical URL with an approved scheme and no credentials, query, or fragment", name)
+	}
+	parsed.Path = canonicalPath
+	return parsed.String(), nil
 }
 
 func httpsURL(values map[string]string, name string) (string, error) {
