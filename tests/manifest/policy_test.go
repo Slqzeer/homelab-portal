@@ -271,7 +271,7 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 			"tailscale.com/parent-resource": "homelab-portal", "tailscale.com/parent-resource-ns": "portal", "tailscale.com/parent-resource-type": "ingress",
 		})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
 		{From: []networkingv1.NetworkPolicyPeer{peer("monitoring", map[string]string{
-			"app.kubernetes.io/name": "prometheus", "operator.prometheus.io/name": "homelab",
+			"app.kubernetes.io/name": "prometheus", "operator.prometheus.io/name": "monitoring-kube-prometheus-prometheus",
 		})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8081)}},
 	}, allow.Spec.Ingress, "each peer must have only its own port: proxy/public and scraper/operations")
 	require.ElementsMatch(t, []networkingv1.NetworkPolicyEgressRule{

@@ -41,7 +41,7 @@ patches:
         path: /spec/ingress/1/from/0/podSelector/matchLabels
         value:
           app.kubernetes.io/name: prometheus
-          operator.prometheus.io/name: homelab
+          operator.prometheus.io/name: monitoring-kube-prometheus-prometheus
       - op: replace
         path: /spec/egress/1/to/0/ipBlock/cidr
         value: 10.43.0.1/32
