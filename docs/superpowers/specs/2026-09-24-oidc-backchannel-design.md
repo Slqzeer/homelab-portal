@@ -54,9 +54,9 @@ http://keycloak.keycloak.svc.cluster.local:8080/realms/homelab
 ```
 
 The application treats both values as normalized URL prefixes with no trailing
-slash. It rejects equal public/backchannel origins in production configuration
-only if doing so would hide a configuration mistake; tests and local fixtures
-may intentionally use one server for both through explicit values.
+slash. It permits equal origins so local and test deployments may use one
+provider. The homelab manifest contract requires distinct public and internal
+origins and the exact production values above.
 
 No credential, token, session key, or certificate material is added to this
 setting. Existing file-backed secret boundaries remain unchanged.
@@ -116,8 +116,9 @@ the new release pin. Its VSO secret schema is unchanged.
 ## 6. Failure behavior
 
 - Invalid issuer or backchannel configuration prevents startup.
-- Discovery failure, redirect, issuer mismatch, off-prefix endpoint, or
-  unsupported metadata prevents OIDC initialization and readiness.
+- Discovery failure, redirect, issuer mismatch, or an endpoint that is missing,
+  non-absolute, malformed, or outside the canonical issuer prefix prevents OIDC
+  initialization and readiness.
 - Token/JWKS backchannel failure makes new login fail with the existing generic
   `portal login failed` response; upstream details and tokens remain private.
 - Existing local sessions retain their current bounded behavior and never gain
