@@ -54,16 +54,19 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # The Service VIP and direct API endpoint need separate rules so each
+    # address receives only its required port. Replace both documentation /32s
+    # in the homelab overlay; CNI DNAT ordering determines which path is used.
     - to:
-        # Documentation-only /32s: set real Service VIP and API endpoint IPs
-        # in the homelab overlay. CNI DNAT ordering determines which is used.
         - ipBlock:
             cidr: 192.0.2.1/32
-        - ipBlock:
-            cidr: 198.51.100.1/32
       ports:
         - protocol: TCP
           port: 443
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.1/32
+      ports:
         - protocol: TCP
           port: 6443
     - to:

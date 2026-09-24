@@ -276,12 +276,10 @@ func TestNetworkBoundaryDeniesEverythingExceptNamedDependencies(t *testing.T) {
 	}, allow.Spec.Ingress, "each peer must have only its own port: proxy/public and scraper/operations")
 	require.ElementsMatch(t, []networkingv1.NetworkPolicyEgressRule{
 		{To: []networkingv1.NetworkPolicyPeer{peer("kube-system", map[string]string{"k8s-app": "kube-dns"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolUDP, 53), port(corev1.ProtocolTCP, 53)}},
-		{To: []networkingv1.NetworkPolicyPeer{
-			{IPBlock: &networkingv1.IPBlock{CIDR: "10.43.0.1/32"}},
-			{IPBlock: &networkingv1.IPBlock{CIDR: "192.168.1.201/32"}},
-		}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 443), port(corev1.ProtocolTCP, 6443)}},
+		{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.43.0.1/32"}}}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 443)}},
+		{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.168.1.201/32"}}}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 6443)}},
 		{To: []networkingv1.NetworkPolicyPeer{peer("keycloak", map[string]string{"app": "keycloak"})}, Ports: []networkingv1.NetworkPolicyPort{port(corev1.ProtocolTCP, 8080)}},
-	}, allow.Spec.Egress, "no general Internet, Vault, target application, or whole-namespace access")
+	}, allow.Spec.Egress, "each Kubernetes API address must be paired only with its exact port")
 	approvedIPBlocks := map[string]bool{"10.43.0.1/32": true, "192.168.1.201/32": true}
 	for _, rule := range allow.Spec.Egress {
 		for _, networkPort := range rule.Ports {
