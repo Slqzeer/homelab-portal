@@ -133,7 +133,7 @@ func oidcEndpointURL(values map[string]string, name string, schemes ...string) (
 		allowed = allowed || parsed.Scheme == scheme
 	}
 	canonicalPath := strings.TrimRight(parsed.Path, "/")
-	if !allowed || parsed.Host == "" || parsed.Opaque != "" ||
+	if !allowed || parsed.Hostname() == "" || parsed.Opaque != "" ||
 		parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" ||
 		canonicalPath == "" || path.Clean(canonicalPath) != canonicalPath {
 		return "", fmt.Errorf("%s must be an absolute canonical URL with an approved scheme and no credentials, query, or fragment", name)
