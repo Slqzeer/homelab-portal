@@ -567,7 +567,7 @@ func (h *harness) probe(t *testing.T, role string) *corev1.Pod {
 	if role == "allowed" {
 		ns, suffix = h.c["ACCEPT_PROBE_NAMESPACE"], "allowed"
 		labels["app.kubernetes.io/name"] = "prometheus"
-		labels["operator.prometheus.io/name"] = "homelab"
+		labels["operator.prometheus.io/name"] = "monitoring-kube-prometheus-prometheus"
 	}
 	if role == "egress" {
 		ns, suffix = h.c["ACCEPT_PORTAL_NAMESPACE"], "egress"
