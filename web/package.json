@@ -12,11 +12,11 @@
     "test:dev": "playwright test --config tests/dev-preview.config.mjs"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.11.0",
+    "@axe-core/playwright": "4.13.0",
     "@astrojs/check": "0.9.10",
-    "@playwright/test": "1.61.0",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "4.3.3",
-    "astro": "7.3.3",
+    "astro": "7.3.5",
     "cross-env": "10.1.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3"
