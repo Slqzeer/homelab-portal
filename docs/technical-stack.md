@@ -1,39 +1,69 @@
-# Stack technique du Homelab Portal
+# Homelab Portal Technical Architecture
 
-## Forme applicative
+## Application Shape
 
-Le portail est une application unique dans un dépôt unique. `web/` contient Astro, Tailwind CSS et le JavaScript natif ; `cmd/` et `internal/` contiennent le BFF Go. Les dépendances front-end et Go sont verrouillées, mises à jour par pull request testée, et ne doivent jamais utiliser de versions flottantes.
+The Portal is one application and one deployment. `web/` contains Astro,
+Tailwind CSS, and native browser JavaScript. `cmd/` and `internal/` contain the Go
+backend-for-frontend. Astro produces static assets during the build and the Go
+binary embeds and serves them; Node is absent from the runtime image.
 
-Astro produit des assets statiques pendant le build. Ils sont embarqués dans le binaire Go, qui sert l'interface, l'authentification OIDC, le catalogue et les diagnostics. Node est donc présent uniquement dans l'étape de build, jamais dans l'image d'exécution. L'UI n'utilise ni CDN, ni framework client, ni bibliothèque de composants : Tailwind produit le CSS local et JavaScript natif couvre recherche, filtres et états d'interface.
+The Go service uses `net/http`, `client-go`, `go-oidc`, and `slog`. It owns the UI,
+OIDC flow, catalog, and diagnostics without a separate public API, database, or
+Redis dependency.
 
-Le BFF repose sur `net/http`, `client-go`, `go-oidc` et `slog`. Il n'utilise ni framework HTTP, ni base de données, ni Redis. Il est le seul serveur du catalogue et ne fournit pas d'API publique distincte.
+## Identity and Catalog
 
-## Identité et catalogue
+Keycloak provides a confidential `homelab-portal` OIDC client using Authorization
+Code with PKCE. The browser receives an encrypted, signed, `Secure`, `HttpOnly`,
+`SameSite=Lax` session cookie rather than OAuth tokens. A Portal Session lasts at
+most four hours, expires after thirty minutes of inactivity, and contains no
+refresh token. The current and previous session keys may overlap during rotation.
 
-Keycloak fournit un client OIDC confidentiel `homelab-portal`, avec Authorization Code + PKCE, scopes `openid profile groups`, claim JSON `groups`, groupe administrateur exact `portal-admin`, callback `/auth/callback` et déconnexion `/auth/logout`. Le navigateur ne reçoit jamais de token. Le BFF crée une session chiffrée et signée dans un cookie `Secure`, `HttpOnly`, `SameSite=Lax`.
+The catalog admits only `networking.k8s.io/v1` Ingresses with Tailscale class,
+valid publication metadata, and exactly one usable LoadBalancer hostname. A
+Catalog Item always targets `https://<hostname>`. The Portal does not probe target
+applications and does not replace their authentication or authorization.
+Administrative catalog entries and diagnostics require the exact `portal-admin`
+group.
 
-Une session dure au plus 4 heures et expire après 30 minutes d'inactivité. Elle ne contient pas de refresh token. La clé de session admet une clé courante et une clé précédente lors d'une rotation ; une déconnexion détruit la session locale. Une indisponibilité temporaire de Keycloak n'annule pas une session locale avant son expiration, mais interdit les nouvelles connexions.
+## Kubernetes and Security
 
-Le catalogue dérive uniquement des Ingress `networking.k8s.io/v1` de classe `tailscale` publiés par métadonnées GitOps valides et possédant exactement un hostname LoadBalancer utilisable. La cible est strictement `https://<hostname>`. Les IP, URL construites, cibles non HTTP et sondages sortants sont exclus. `available` signifie que cette publication est valide et actuelle, jamais que l'application répond à HTTP.
+The target cluster is k3s. The multi-platform image runs non-root with a read-only
+root filesystem, no Linux capabilities, no privilege escalation, and
+`RuntimeDefault` seccomp. The initial deployment uses one replica and no PVC.
 
-Les applications cibles gardent entièrement leur propre authentification et autorisation. Le portail ne gère que la visibilité d'une carte. Les cartes `admin` et les diagnostics sont réservés à `portal-admin`.
+RBAC grants only `get`, `list`, and `watch` on Ingresses across namespaces. It
+grants no Secret, Pod, Service, Deployment, or write access. Deny-by-default
+network policy permits only Tailscale proxy traffic, Prometheus scraping, DNS,
+the Kubernetes API, and Keycloak. Live acceptance must verify that the installed
+CNI enforces those rules.
 
-## Kubernetes et sécurité
+The Kubernetes cache lists with a ten-second deadline and watches with jittered
+backoff. The last valid catalog becomes degraded after two minutes and expired
+after fifteen; readiness then fails while stale links remain visibly marked.
 
-La cible est Kubernetes `v1.36.4+k3s1`; l'image est publiée pour `linux/amd64` et `linux/arm64`. Le conteneur Go est une image distroless non-root, sans shell ni gestionnaire de paquets, avec racine en lecture seule, `allowPrivilegeEscalation: false`, capacités Linux supprimées et profil seccomp `RuntimeDefault`.
+## Runtime Surfaces
 
-Le portail démarre avec une réplique, sans PVC. Ses ressources sont `25m` CPU et `48Mi` en requests, `100m` CPU et `128Mi` en limits, avec 20 secondes d'arrêt gracieux. Un `ClusterRole` cross-namespace n'accorde que `get`, `list` et `watch` sur les Ingress. Aucun Secret, Pod, Service, Deployment ou droit d'écriture n'est accordé.
+The public listener uses `PORT`, default `8080`, and serves pages, assets, and
+authentication. The operations listener uses `OPERATIONS_PORT`, default `8081`,
+and serves only `/healthz`, `/readyz`, and `/metrics`. Each listener returns 404
+for the other listener's routes. Kubernetes Services, probes, monitoring, and
+network policies preserve that separation.
 
-Une `NetworkPolicy` deny-by-default autorise seulement l'entrée depuis le proxy Tailscale et le scrape Prometheus, ainsi que la sortie vers kube-dns, l'API Kubernetes et Keycloak. Son application effective dépend du CNI du cluster et doit être vérifiée au déploiement.
+Logs are structured and exclude identities, addresses, groups, cookies, tokens,
+authorization headers, OIDC codes, and sensitive URLs. Authentication routes are
+rate limited. The service shuts down both listeners within the configured
+graceful termination window.
 
-Le premier list Kubernetes a un délai de 10 secondes. Le watch utilise un backoff avec jitter de 1 à 30 secondes et reliste après `410 Gone`; son snapshot est atomique. Le dernier catalogue valide reste affiché, est signalé dégradé après 2 minutes, puis expiré après 15 minutes : `/readyz` échoue alors, mais les derniers liens restent affichés avec leur état obsolète.
+## Delivery
 
-## Exposition, observabilité et livraison
+Kustomize and Argo CD deliver the application. This repository owns the image and
+application manifests; Homelab owns the namespace, Argo CD Application, shared
+Keycloak/Vault integration, and centralized Tailscale Ingress.
 
-L'Ingress Tailscale est l'unique exposition du portail et cible uniquement le port nommé `public` du Service (`PORT`, 8080 par défaut). Un second listener indépendant, nommé `operations` (`OPERATIONS_PORT`, 8081 par défaut), sert uniquement `/healthz`, `/readyz` et `/metrics` pour les probes kubelet et Prometheus. Ces routes renvoient 404 sur le listener public ; les pages, routes auth et assets renvoient 404 sur le listener operations. Les deux ports doivent être distincts ; les règles NetworkPolicy associent séparément le proxy au port public et le scraper au port operations. Les deux serveurs partagent le délai de fermeture de 20 secondes. Des règles GitOps alertent si le list initial échoue ou le cache expire, et avertissent si le watch se reconnecte plus de deux minutes ou si des annotations restent invalides.
-
-Les logs JSON stdout utilisent `INFO` en production, un identifiant de requête, l'événement et son résultat. Ils excluent adresse IP, utilisateur, groupe, cookies, tokens, codes OIDC, en-têtes `Authorization` et URL sensibles. Les routes d'authentification sont limitées à 10 tentatives par IP sur cinq minutes; un dépassement retourne `429` avec un blocage visible de dix minutes.
-
-L'application est livrée par Kustomize et Argo CD. Les manifests de l'application sont dans son dépôt; le dépôt homelab porte le namespace, l'Application Argo au wave 23, et l'Ingress centralisé au wave 21. Les images sont identifiées par tag immuable et digest. Chaque release produit SBOM, scan de vulnérabilités et signature avant une promotion humaine. Un retour arrière est un retour au commit Git précédent.
-
-La barrière de release couvre tests unitaires, faux client Kubernetes, contrats OIDC, RBAC négatif, intégration Keycloak, e2e in-cluster Tailscale, synchronisation VSO, santé Argo CD et limite mémoire du proxy Tailscale.
+Release images are immutable multi-platform indexes with per-platform SBOMs,
+vulnerability scans, signatures, and provenance. Human approval selects the
+exact digest and Git revision for a reviewed Homelab change. Rollback restores a
+previous reviewed GitOps commit and its matching immutable digest. The detailed
+procedure and evidence requirements are canonical in the
+[release runbook](runbooks/release.md).
