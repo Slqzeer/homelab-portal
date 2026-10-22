@@ -9,6 +9,7 @@ const emptyClearCategory = document.querySelector('[data-empty-clear-category]')
 const themeToggle = document.querySelector('[data-theme-toggle]');
 const themeToggleIcon = document.querySelector('[data-theme-toggle-icon]');
 const themeToggleLabel = document.querySelector('[data-theme-toggle-label]');
+const profileEntry = document.querySelector('[data-profile-entry]');
 
 const updateThemeToggle = () => {
   const isDark = document.documentElement.dataset.theme === 'dark';
@@ -29,6 +30,20 @@ themeToggle?.addEventListener('click', () => {
     // The visual preference still applies for this page when storage is unavailable.
   }
   updateThemeToggle();
+});
+
+profileEntry?.addEventListener('focusin', () => {
+  delete profileEntry.dataset.profilePreviewDismissed;
+});
+
+profileEntry?.addEventListener('focusout', () => {
+  delete profileEntry.dataset.profilePreviewDismissed;
+});
+
+profileEntry?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    profileEntry.dataset.profilePreviewDismissed = '';
+  }
 });
 
 if (search && status) {

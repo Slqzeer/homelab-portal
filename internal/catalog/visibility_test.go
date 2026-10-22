@@ -70,6 +70,19 @@ func TestVisibleUsesExactCaseSensitiveGroupIntersection(t *testing.T) {
 	assert.Equal(t, []string{"exact"}, itemIDs(Visible(items, identity)))
 }
 
+func TestVisibleIgnoresDisplayName(t *testing.T) {
+	items := []CatalogItem{
+		{ID: "admin", Access: AccessAdmin},
+		{ID: "group", Access: AccessGroups, Groups: []string{"team-a"}},
+		{ID: "authenticated", Access: AccessAuthenticated},
+		{ID: "public", Access: AccessPublic},
+	}
+	first := &Identity{Authenticated: true, Groups: groupSet("team-a", "portal-admin"), IsAdmin: true, DisplayName: "Ada Lovelace"}
+	second := &Identity{Authenticated: true, Groups: groupSet("team-a", "portal-admin"), IsAdmin: true, DisplayName: "Different Name"}
+
+	assert.Equal(t, itemIDs(Visible(items, first)), itemIDs(Visible(items, second)))
+}
+
 func TestVisibleSortsStablyWithoutMutatingInput(t *testing.T) {
 	items := []CatalogItem{
 		{ID: "zeta", Name: "Zeta", Category: "Beta", Order: 10, Access: AccessPublic},

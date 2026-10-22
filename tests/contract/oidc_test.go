@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +102,37 @@ func TestOIDCCallbackAcceptsSignedClaimsAndReturnsOnlyAuthorizationFacts(t *test
 	require.NoError(t, err)
 	for _, private := range []string{"private-subject", "secret-code", "access-token", "refresh-token", "id_token"} {
 		require.NotContains(t, string(encoded), private)
+	}
+}
+
+func TestOIDCCallbackNormalizesDisplayNameWithoutFailingLogin(t *testing.T) {
+	tests := []struct {
+		name    string
+		claim   any
+		present bool
+		want    string
+	}{
+		{name: "trimmed string", claim: "  Ada Lovelace  ", present: true, want: "Ada Lovelace"},
+		{name: "missing"},
+		{name: "null", claim: nil, present: true},
+		{name: "non-string", claim: 17, present: true},
+		{name: "whitespace only", claim: " 	 ", present: true},
+		{name: "control character", claim: "Ada\nLovelace", present: true},
+		{name: "maximum unicode length", claim: strings.Repeat("界", 120), present: true, want: strings.Repeat("界", 120)},
+		{name: "over unicode limit", claim: strings.Repeat("界", 121), present: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newProviderFixture(t)
+			if tc.present {
+				f.claims["name"] = tc.claim
+			}
+			client, ctx := f.client(t)
+			claims, err := client.Callback(ctx, callbackParams())
+			require.NoError(t, err)
+			require.Equal(t, []string{"portal-admin", "Team A"}, claims.Groups)
+			require.Equal(t, tc.want, claims.DisplayName)
+		})
 	}
 }
 
