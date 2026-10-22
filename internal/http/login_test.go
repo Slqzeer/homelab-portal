@@ -78,7 +78,12 @@ func newLoginProvider(t *testing.T) *loginProvider {
 
 func (p *loginProvider) start(t *testing.T, f *fixture) (*http.Cookie, string) {
 	t.Helper()
-	w := f.request("GET", "/auth/login", nil)
+	return p.startPath(t, f, "/auth/login")
+}
+
+func (p *loginProvider) startPath(t *testing.T, f *fixture, path string) (*http.Cookie, string) {
+	t.Helper()
+	w := f.request("GET", path, nil)
 	if w.Code != 302 {
 		t.Fatalf("login status = %d: %s", w.Code, w.Body)
 	}
@@ -146,6 +151,25 @@ func TestLoginCallbackConsumesBrowserBoundTransactionOnce(t *testing.T) {
 	}
 	if p.requests.Load() != 1 {
 		t.Errorf("provider exchange count = %d", p.requests.Load())
+	}
+}
+
+func TestLoginReturnDestinationIsServerDefined(t *testing.T) {
+	p := newLoginProvider(t)
+	for _, tc := range []struct {
+		name, path, want string
+	}{
+		{name: "ordinary login ignores browser return", path: "/auth/login?return=https://attacker.example&next=/profile", want: "/"},
+		{name: "profile login ignores browser return", path: "/profile?return=https://attacker.example&next=/admin&redirect=/", want: "/profile"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, func(o *portalhttp.Options) { o.OIDC = p.client })
+			cookie, state := p.startPath(t, f, tc.path)
+			w := p.callback(f, cookie, "code=secret-code&state="+url.QueryEscape(state))
+			if w.Code != http.StatusSeeOther || w.Header().Get("Location") != tc.want {
+				t.Fatalf("callback = %d location %q: %s", w.Code, w.Header().Get("Location"), w.Body)
+			}
+		})
 	}
 }
 
