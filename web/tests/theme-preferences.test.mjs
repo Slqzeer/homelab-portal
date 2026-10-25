@@ -122,7 +122,9 @@ const states = [
   { name: 'catalogue', route: '/', empty: false, marker: '[data-catalog-grid]' },
   { name: 'stale catalogue', route: '/__test/stale', empty: false, marker: '.stale-banner' },
   { name: 'filtered empty catalogue', route: '/', empty: true, marker: '[data-empty-results]' },
-  { name: 'authenticated account action', route: '/__test/admin', empty: false, marker: 'button:has-text("Sign out")' },
+  { name: 'authenticated catalogue', route: '/__test/profile', empty: false, marker: '[data-profile-entry]' },
+  { name: 'authenticated administrator catalogue', route: '/__test/admin', empty: false, marker: 'a[aria-label="Profile: Signed-in user"]' },
+  { name: 'fallback profile', route: '/__test/profile-fallback', empty: false, marker: 'button:has-text("Sign out")' },
 ];
 
 for (const colorScheme of ['light', 'dark']) {

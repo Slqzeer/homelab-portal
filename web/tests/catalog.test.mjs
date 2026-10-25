@@ -14,19 +14,72 @@ test('production-rendered portal declares a resolved theme contract on the docum
   await expect(page.locator('html')).toHaveAttribute('data-theme', /light|dark/);
 });
 
-test('production-rendered authenticated profile entry reaches the read-only profile page', async ({ page }) => {
+test('production-rendered authenticated profile entry reaches the read-only profile page', async ({ page, browser }) => {
+  const requests = [];
+  page.on('request', (request) => requests.push(new URL(request.url()).pathname));
   await page.goto(`${baseURL}/__test/profile`);
   const profile = page.getByRole('link', { name: 'Profile: Ada Lovelace' });
+  const preview = page.locator('[data-profile-preview]');
   await expect(profile).toBeVisible();
+  await expect(profile).toHaveText('AL');
   const box = await profile.boundingBox();
   expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(44);
+  await expect(preview.locator('a, button, input, [tabindex]')).toHaveCount(0);
+  await expect(preview).toHaveCSS('opacity', '0');
+  await profile.hover();
+  await expect(preview).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await expect(preview).toHaveCSS('opacity', '0');
   await profile.focus();
-  await expect(page.locator('#profile-preview')).toContainText('Ada Lovelace');
-  await profile.press('Enter');
+  await expect(preview).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCSS('opacity', '0');
+  await page.keyboard.press('Enter');
   await expect(page).toHaveURL(`${baseURL}/profile`);
   await expect(page.getByRole('heading', { name: 'Ada Lovelace' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText(/portal-admin|private-subject|private-access-token|private-refresh-token/);
+  expect(await page.evaluate(() => Object.keys(window.localStorage))).not.toContain('profile');
+  expect(requests.filter((path) => /profile|identity|session/.test(path))).toEqual(['/__test/profile', '/profile']);
+
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  const signOutForm = page.locator('form[action="/auth/logout"]');
+  await expect(signOutForm).toHaveAttribute('method', 'post');
+  const csrfToken = await signOutForm.locator('input[name="csrf_token"]').inputValue();
+  const signOut = await page.request.post(`${baseURL}/auth/logout`, {
+    headers: { Origin: baseURL },
+    form: { csrf_token: csrfToken },
+    maxRedirects: 0,
+  });
+  expect(signOut.status()).toBe(303);
+  await page.goto(baseURL + '/');
+  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await expect(page.locator('[data-profile-entry]')).toHaveCount(0);
+
+  const touchContext = await browser.newContext({ hasTouch: true, ignoreHTTPSErrors: true });
+  const touchPage = await touchContext.newPage();
+  await touchPage.goto(`${baseURL}/__test/profile`);
+  await touchPage.getByRole('link', { name: 'Profile: Ada Lovelace' }).tap();
+  await expect(touchPage).toHaveURL(`${baseURL}/profile`);
+  await touchContext.close();
+});
+
+test('production-rendered profile uses fallback identity and authorizes the admin link independently', async ({ page }) => {
+  await page.goto(`${baseURL}/__test/profile-fallback`);
+  await expect(page.getByRole('heading', { name: 'Signed-in user' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toHaveCount(0);
+
+  await page.goto(`${baseURL}/__test/profile-admin`);
+  const accountLinks = page.locator('header .identity-actions a');
+  await expect(accountLinks.last()).toHaveAccessibleName('Profile: Ada Admin');
+  await page.getByRole('link', { name: 'Profile: Ada Admin' }).click();
+  await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('portal-admin');
 });
 
@@ -173,6 +226,9 @@ test('production-rendered anonymous cards filter locally and never request catal
   const anonymousHTML = await page.content();
   expect(anonymousHTML).not.toContain('Secret Admin');
   expect(anonymousHTML).not.toContain('secret-admin.tail.example');
+  expect(anonymousHTML).not.toContain('data-profile-entry');
+  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await expect(page.locator('a[href="/profile"], [data-profile-preview]')).toHaveCount(0);
 
   for (const requestURL of requests) {
     const requested = new URL(requestURL);
@@ -392,7 +448,7 @@ test('production-rendered admin identity receives its authorized card set', asyn
   await expect(page.locator('.catalog-main')).toBeVisible();
   await expect(page.locator('aside.catalog-information-rail').getByRole('link')).toHaveCount(0);
   await expect(page.locator('header.site-header').getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Profile: Signed-in user' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(visibleArticles(page)).toHaveCount(5);
   await expect(page.getByRole('article').filter({ hasText: 'Secret Admin' })).toBeVisible();

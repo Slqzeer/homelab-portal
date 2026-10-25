@@ -57,8 +57,13 @@ func ingress(name, access, groups string) networkingv1.Ingress {
 
 func (f *fixture) cookie(t *testing.T, groups ...string) *http.Cookie {
 	t.Helper()
+	return f.cookieWithClaims(t, auth.Claims{Groups: groups})
+}
+
+func (f *fixture) cookieWithClaims(t *testing.T, claims auth.Claims) *http.Cookie {
+	t.Helper()
 	w := httptest.NewRecorder()
-	if err := f.sessions.Create(w, auth.Claims{Groups: groups}, f.now); err != nil {
+	if err := f.sessions.Create(w, claims, f.now); err != nil {
 		t.Fatal(err)
 	}
 	return w.Result().Cookies()[0]
@@ -84,7 +89,7 @@ func (f *fixture) operations(path string) *httptest.ResponseRecorder {
 
 func TestOperationsListenerHasNoPagesAuthOrAssets(t *testing.T) {
 	f := newFixture(t)
-	for _, path := range []string{"/", "/admin", "/auth/login", "/auth/callback", "/auth/logout", "/app.js", "/index.html", "/api/catalog"} {
+	for _, path := range []string{"/", "/admin", "/profile", "/auth/login", "/auth/callback", "/auth/logout", "/app.js", "/index.html", "/api/catalog"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := httptest.NewRequest(method, "https://portal.example"+path, nil)
 			r.AddCookie(f.cookie(t, "portal-admin"))
@@ -172,7 +177,7 @@ func TestAdminDiagnosticsAreRestrictedAndAllowlisted(t *testing.T) {
 
 func TestSecurityHeadersApplyToPagesErrorsAndStaticAssets(t *testing.T) {
 	f := newFixture(t)
-	for _, path := range []string{"/", "/admin", "/healthz", "/readyz", "/metrics", "/auth/login", "/auth/callback", "/auth/logout", "/missing", "/app.js", "/index.html", "/api/catalog"} {
+	for _, path := range []string{"/", "/admin", "/profile", "/healthz", "/readyz", "/metrics", "/auth/login", "/auth/callback", "/auth/logout", "/missing", "/app.js", "/index.html", "/api/catalog"} {
 		w := f.request("GET", path, nil)
 		for key, want := range map[string]string{"Strict-Transport-Security": "max-age=31536000", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store"} {
 			if w.Header().Get(key) != want {
