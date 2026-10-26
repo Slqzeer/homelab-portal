@@ -498,6 +498,9 @@ func TestWatcherBacksOffAcrossRepeatedResourceExpiryRelists(t *testing.T) {
 		}
 	}
 	assert.Equal(t, want, got)
+	require.Eventually(t, func() bool {
+		return listCalls.Load() == 8 && watchCalls.Load() == 8
+	}, time.Second, time.Millisecond)
 	assert.Equal(t, int32(8), listCalls.Load())
 	assert.Equal(t, int32(8), watchCalls.Load())
 }
