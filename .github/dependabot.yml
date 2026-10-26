@@ -26,6 +26,11 @@ updates:
       web-compatible:
         patterns: ['*']
         update-types: [minor, patch]
+    ignore:
+      # @astrojs/check (0.9.12) accepts only TypeScript ^5 || ^6; drop this once
+      # it accepts 7 (homelab-portal#5).
+      - dependency-name: typescript
+        versions: ['>=7']
   - package-ecosystem: docker
     directory: /
     schedule:

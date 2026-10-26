@@ -21,7 +21,7 @@ docker buildx build --platform linux/amd64 --load --tag portal:ci .
 bash scripts/verify.sh image
 ```
 
-`reports/` is ignored local output. CI archives reports for 14 days; release evidence for 90 days. Archive release evidence longer with the operational release record before expiration. Pinned tooling/action updates require review; Dependabot proposes grouped weekly Actions, Go, npm and Docker updates, without automatic merging. Review script-installed tool versions and pinned schema commits manually as well.
+`reports/` is ignored local output. CI archives reports for 14 days; release evidence for 90 days. Archive release evidence longer with the operational release record before expiration. Pinned tooling/action updates require review; Dependabot proposes grouped weekly Actions, Go, npm and Docker updates, without automatic merging. It skips TypeScript 7 until `@astrojs/check` accepts it (`.github/dependabot.yml`). Review script-installed tool versions and pinned schema commits manually as well.
 
 Both workflows pin Buildx 0.37.1 and the BuildKit 0.33.0 image by digest through the `docker-container` driver. Release also pins the QEMU binfmt 10.2.3-68 image by digest. Review updates to these action inputs manually together with the release contracts; pinning the setup action's commit alone does not pin the tools it installs.
 
