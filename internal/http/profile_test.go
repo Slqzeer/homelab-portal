@@ -46,7 +46,7 @@ func TestHomeProfileEntrySeparatesAnonymousAndAuthenticatedIdentity(t *testing.T
 	}
 
 	fallback := f.request(http.MethodGet, "/", f.cookie(t)).Body.String()
-	for _, want := range []string{`aria-label="Profile: Signed-in user"`, ">?</a>", "Signed-in user", "Signed in."} {
+	for _, want := range []string{`aria-label="? — Profile: Signed-in user"`, ">?</a>", "Signed-in user", "Signed in."} {
 		if !strings.Contains(fallback, want) {
 			t.Errorf("fallback home missing %q", want)
 		}

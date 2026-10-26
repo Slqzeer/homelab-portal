@@ -123,7 +123,7 @@ const states = [
   { name: 'stale catalogue', route: '/__test/stale', empty: false, marker: '.stale-banner' },
   { name: 'filtered empty catalogue', route: '/', empty: true, marker: '[data-empty-results]' },
   { name: 'authenticated catalogue', route: '/__test/profile', empty: false, marker: '[data-profile-entry]' },
-  { name: 'authenticated administrator catalogue', route: '/__test/admin', empty: false, marker: 'a[aria-label="Profile: Signed-in user"]' },
+  { name: 'authenticated administrator catalogue', route: '/__test/admin', empty: false, marker: 'a[aria-label="? — Profile: Signed-in user"]' },
   { name: 'fallback profile', route: '/__test/profile-fallback', empty: false, marker: 'button:has-text("Sign out")' },
 ];
 
