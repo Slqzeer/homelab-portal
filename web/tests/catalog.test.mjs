@@ -18,7 +18,7 @@ test('production-rendered authenticated profile entry reaches the read-only prof
   const requests = [];
   page.on('request', (request) => requests.push(new URL(request.url()).pathname));
   await page.goto(`${baseURL}/__test/profile`);
-  const profile = page.getByRole('link', { name: 'Profile: Ada Lovelace' });
+  const profile = page.getByRole('link', { name: 'AL — Profile: Ada Lovelace' });
   const preview = page.locator('[data-profile-preview]');
   await expect(profile).toBeVisible();
   await expect(profile).toHaveText('AL');
@@ -65,7 +65,7 @@ test('production-rendered authenticated profile entry reaches the read-only prof
   const touchContext = await browser.newContext({ hasTouch: true, ignoreHTTPSErrors: true });
   const touchPage = await touchContext.newPage();
   await touchPage.goto(`${baseURL}/__test/profile`);
-  await touchPage.getByRole('link', { name: 'Profile: Ada Lovelace' }).tap();
+  await touchPage.getByRole('link', { name: 'AL — Profile: Ada Lovelace' }).tap();
   await expect(touchPage).toHaveURL(`${baseURL}/profile`);
   await touchContext.close();
 });
@@ -77,8 +77,8 @@ test('production-rendered profile uses fallback identity and authorizes the admi
 
   await page.goto(`${baseURL}/__test/profile-admin`);
   const accountLinks = page.locator('header .identity-actions a');
-  await expect(accountLinks.last()).toHaveAccessibleName('Profile: Ada Admin');
-  await page.getByRole('link', { name: 'Profile: Ada Admin' }).click();
+  await expect(accountLinks.last()).toHaveAccessibleName('AA — Profile: Ada Admin');
+  await page.getByRole('link', { name: 'AA — Profile: Ada Admin' }).click();
   await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('portal-admin');
 });
@@ -448,7 +448,7 @@ test('production-rendered admin identity receives its authorized card set', asyn
   await expect(page.locator('.catalog-main')).toBeVisible();
   await expect(page.locator('aside.catalog-information-rail').getByRole('link')).toHaveCount(0);
   await expect(page.locator('header.site-header').getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Profile: Signed-in user' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '? — Profile: Signed-in user' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin diagnostics' })).toBeVisible();
   await expect(visibleArticles(page)).toHaveCount(5);
   await expect(page.getByRole('article').filter({ hasText: 'Secret Admin' })).toBeVisible();
