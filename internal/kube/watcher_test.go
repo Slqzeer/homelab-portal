@@ -525,12 +525,17 @@ func TestWatcherRemainsUninitializedUntilAListSucceeds(t *testing.T) {
 		store,
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		WithSleeper(func(ctx context.Context, _ time.Duration) error {
-			sleepEntered <- struct{}{}
+			// A retry racing with cleanup must not block on test instrumentation.
+			select {
+			case sleepEntered <- struct{}{}:
+			default:
+			}
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-releaseRetry:
-				return nil
+				// Preserve cancellation if release and cleanup become ready together.
+				return ctx.Err()
 			}
 		}),
 	)
